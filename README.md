@@ -1,8 +1,8 @@
-# NQZ6 Live
+# NQZ6 Live (Tradovate-style)
 
-Near-live **Nasdaq-100 Dec futures (NQZ6 / NQZ26.CME)** monitor on the **5-minute** timeframe for Gujju Gaming / Trading Cycle.
+Near-live **Nasdaq-100 Dec futures (NQZ6 / NQZ26.CME)** on the **5-minute** chart for Gujju Gaming / Trading Cycle.
 
-The app polls Yahoo Finance every **20 seconds** (via a Vite dev proxy), redraws the 5m candle chart, and refreshes a **next-candle suggestion** (bias, expected direction vs last close, invalidation).
+The UI is a **Tradovate-style** dark trading desk (chart + order-ticket-adjacent panel) — **not** TradingView branding/layout. It polls Yahoo Finance every **20 seconds**, redraws 5m candles, and highlights the **forming candle + projected next 5m zone** in bullish/bearish/neutral colors tied to the live next-candle suggestion.
 
 ## Run locally
 
@@ -11,18 +11,16 @@ npm install
 npm run dev
 ```
 
-Open **http://127.0.0.1:4317** (port is fixed in `vite.config.ts`).
+Open **http://127.0.0.1:4317** (port fixed in `vite.config.ts`).
 
-## Scripts
+## What you see
 
-| Command        | What it does              |
-|----------------|---------------------------|
-| `npm run dev`  | Dev server on port 4317   |
-| `npm run build`| Typecheck + production build |
-| `npm run preview` | Preview production build |
+- Dark Tradovate-like chart chrome (grid, crosshair, price/time axes, green/red candles)
+- Right-side order-ticket panel with bias / expect-close / invalidation
+- `FORMING` + `NEXT` markers that refresh on each poll
 
 ## Notes
 
-- Quotes come from Yahoo’s CME chart endpoint and are often **delayed** vs the live futures book.
-- Browser calls go to `/api/yahoo/...`, rewritten by Vite to `query1.finance.yahoo.com`.
-- This is a tactical 5m aid, not investment advice.
+- Yahoo CME quotes are often delayed vs the live book.
+- Browser calls go to `/api/yahoo/...` (Vite proxy).
+- Tactical 5m aid only — not investment advice.

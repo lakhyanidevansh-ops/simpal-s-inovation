@@ -1,7 +1,7 @@
 import { CandleChart } from './components/CandleChart'
 import { KeyLevels } from './components/KeyLevels'
+import { OrderTicketPanel } from './components/OrderTicketPanel'
 import { RecentCandles } from './components/RecentCandles'
-import { SuggestionPanel } from './components/SuggestionPanel'
 import { useLiveNqz6 } from './hooks/useLiveNqz6'
 
 function formatClock(ts: number | null): string {
@@ -19,84 +19,100 @@ export default function App() {
   const { snapshot, suggestion, status, error, lastSuccessAt, pollMs } =
     useLiveNqz6()
 
-  const live = status === 'live' && snapshot && suggestion
+  const live = Boolean(snapshot && suggestion)
 
   return (
-    <div className="mx-auto min-h-screen max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
-      <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--accent)]">
-            Gujju Gaming · Trading Cycle
-          </p>
-          <h1 className="font-display mt-1 text-4xl font-extrabold tracking-tight sm:text-5xl">
-            NQZ6 Live
-          </h1>
-          <p className="mt-2 max-w-xl text-sm text-[var(--muted)]">
-            Near-live Nasdaq-100 Dec futures (NQZ26.CME) on the 5-minute
-            chart, with an auto-refreshing next-candle suggestion.
-          </p>
-        </div>
-        <div className="rounded-xl border border-[var(--line)] bg-white/70 px-4 py-3 text-right shadow-sm">
-          <div className="flex items-center justify-end gap-2 text-sm">
-            <span
-              className={`inline-block h-2.5 w-2.5 rounded-full ${
-                status === 'live'
-                  ? 'bg-emerald-500'
-                  : status === 'loading'
-                    ? 'bg-amber-400'
-                    : 'bg-rose-500'
-              }`}
-            />
-            <span className="font-medium capitalize">{status}</span>
+    <div className="flex h-full min-h-screen flex-col bg-[var(--tvate-bg)] text-[var(--tvate-text)]">
+      {/* Tradovate-style top chrome */}
+      <header className="flex flex-wrap items-center gap-3 border-b border-[var(--tvate-border)] bg-[var(--tvate-panel)] px-3 py-2">
+        <div className="flex items-center gap-2">
+          <div className="flex h-7 w-7 items-center justify-center rounded bg-[#1f6feb] text-[11px] font-bold">
+            T
           </div>
-          <p className="font-mono mt-1 text-xs text-[var(--muted)]">
-            Poll every {pollMs / 1000}s · last OK {formatClock(lastSuccessAt)} ET
-          </p>
+          <div>
+            <div className="text-[13px] font-semibold leading-tight">
+              Tradovate-style · NQZ6
+            </div>
+            <div className="text-[10px] text-[var(--tvate-muted)]">
+              Gujju Gaming / Trading Cycle · clone chrome (not TradingView)
+            </div>
+          </div>
+        </div>
+
+        <div className="ml-auto flex flex-wrap items-center gap-2 text-[11px]">
+          <span className="rounded border border-[var(--tvate-border)] bg-[var(--tvate-panel-2)] px-2 py-1 font-mono">
+            NQZ26.CME · 5m
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded border border-[var(--tvate-border)] bg-[var(--tvate-panel-2)] px-2 py-1">
+            <span
+              className="inline-block h-2 w-2 rounded-full"
+              style={{
+                background:
+                  status === 'live'
+                    ? 'var(--tvate-up)'
+                    : status === 'loading'
+                      ? 'var(--tvate-warn)'
+                      : 'var(--tvate-down)',
+              }}
+            />
+            <span className="capitalize">{status}</span>
+            <span className="text-[var(--tvate-muted)]">
+              · {pollMs / 1000}s · {formatClock(lastSuccessAt)} ET
+            </span>
+          </span>
         </div>
       </header>
 
+      {/* Chart toolbar */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-[var(--tvate-border)] bg-[var(--tvate-panel-2)] px-3 py-1.5 text-[11px] text-[var(--tvate-muted)]">
+        <span className="rounded bg-[var(--tvate-bg)] px-2 py-0.5 text-[var(--tvate-text)]">
+          Candlestick
+        </span>
+        <span>Crosshair</span>
+        <span>Grid</span>
+        <span>Price axis</span>
+        <span>Time axis</span>
+        <span className="text-[var(--tvate-warn)]">NEXT bar highlight ON</span>
+        {snapshot && (
+          <span className="ml-auto font-mono text-[var(--tvate-text)]">
+            Last {snapshot.regularMarketPrice.toFixed(2)}
+            {snapshot.previousClose != null && (
+              <span className="text-[var(--tvate-muted)]">
+                {' '}
+                · prev {snapshot.previousClose.toFixed(2)}
+              </span>
+            )}
+          </span>
+        )}
+      </div>
+
       {status === 'loading' && !snapshot && (
-        <div className="rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-8 text-center text-[var(--muted)]">
-          Loading NQZ6 5m candles from Yahoo…
+        <div className="flex flex-1 items-center justify-center text-[var(--tvate-muted)]">
+          Loading NQZ6 5m from Yahoo…
         </div>
       )}
 
       {status === 'error' && !snapshot && (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-rose-800">
+        <div className="m-4 rounded border border-[var(--tvate-down)] bg-[#2a1212] p-4 text-[var(--tvate-down)]">
           <p className="font-semibold">Could not load market data</p>
           <p className="mt-1 text-sm">{error}</p>
         </div>
       )}
 
-      {live && (
-        <div className="space-y-5">
-          <SuggestionPanel suggestion={suggestion} />
-
-          <section className="rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-4 shadow-sm">
-            <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
-              <div>
-                <h2 className="font-display text-xl font-bold">
-                  {snapshot.symbol} · 5m
-                </h2>
-                <p className="text-sm text-[var(--muted)]">
-                  {snapshot.shortName} · {snapshot.exchange}
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="font-mono text-2xl font-semibold">
-                  {snapshot.regularMarketPrice.toFixed(2)}
-                </p>
-                {snapshot.previousClose != null && (
-                  <p className="text-xs text-[var(--muted)]">
-                    Prev settle ~{snapshot.previousClose.toFixed(2)}
-                  </p>
-                )}
-              </div>
+      {live && snapshot && suggestion && (
+        <>
+          <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px]">
+            <div className="min-h-[460px] border-b border-[var(--tvate-border)] lg:border-b-0">
+              <CandleChart candles={snapshot.candles} suggestion={suggestion} />
             </div>
-            <CandleChart candles={snapshot.candles} suggestion={suggestion} />
-          </section>
+            <OrderTicketPanel
+              suggestion={suggestion}
+              lastPrice={snapshot.regularMarketPrice}
+              symbol={snapshot.symbol}
+            />
+          </div>
 
-          <div className="grid gap-5 lg:grid-cols-[1.4fr_0.8fr]">
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.5fr)_280px]">
             <RecentCandles
               candles={snapshot.candles}
               timeZone={snapshot.timezone}
@@ -104,18 +120,14 @@ export default function App() {
             <KeyLevels suggestion={suggestion} />
           </div>
 
-          {error && (
-            <p className="text-sm text-amber-800">
-              Last refresh warning: {error} (showing prior good snapshot)
-            </p>
-          )}
-
-          <footer className="rounded-xl border border-dashed border-[var(--line)] bg-white/50 px-4 py-3 text-xs text-[var(--muted)]">
-            Source: {snapshot.source}. CME futures quotes via Yahoo are often
-            delayed vs the live pit/electronic book. This is a tactical 5m
-            next-candle aid — not investment advice. Bars={suggestion.analyzedBars}.
+          <footer className="border-t border-[var(--tvate-border)] bg-[var(--tvate-panel)] px-3 py-2 text-[10px] text-[var(--tvate-muted)]">
+            Source: {snapshot.source}. Yahoo CME quotes are often delayed.
+            Chart chrome is <strong className="text-[var(--tvate-text)]">Tradovate-style</strong>{' '}
+            (dark desk + order-ticket adjacent) — not TradingView branding.
+            Forming + projected next 5m bars update each poll. Not investment advice.
+            {error ? ` · refresh warn: ${error}` : ''}
           </footer>
-        </div>
+        </>
       )}
     </div>
   )

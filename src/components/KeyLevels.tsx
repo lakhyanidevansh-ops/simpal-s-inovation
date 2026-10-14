@@ -6,15 +6,19 @@ type Props = {
 
 export function KeyLevels({ suggestion }: Props) {
   return (
-    <section className="rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-4 shadow-sm">
-      <h3 className="font-display text-lg font-bold">Key 5m levels</h3>
-      <ul className="mt-3 space-y-2">
+    <section className="border-t border-l border-[var(--tvate-border)] bg-[var(--tvate-panel)]">
+      <div className="border-b border-[var(--tvate-border)] px-3 py-1.5">
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--tvate-muted)]">
+          Levels
+        </h3>
+      </div>
+      <ul className="p-2">
         {suggestion.keyLevels.map((lvl) => (
           <li
             key={lvl.label}
-            className="flex items-center justify-between gap-3 border-b border-[var(--line)] pb-2 text-sm last:border-0 last:pb-0"
+            className="flex items-center justify-between gap-3 border-b border-[var(--tvate-border-soft)] px-1 py-1.5 text-[11px] last:border-0"
           >
-            <span className="text-[var(--muted)]">{lvl.label}</span>
+            <span className="text-[var(--tvate-muted)]">{lvl.label}</span>
             <span className="font-mono font-semibold">{lvl.value.toFixed(2)}</span>
           </li>
         ))}
