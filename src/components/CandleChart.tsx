@@ -116,9 +116,10 @@ export function CandleChart({ candles, suggestions, livePrice, mark }: Props) {
     if (n <= 0) return
     const show = Math.min(DEFAULT_VISIBLE, Math.max(n - 2, 20))
     // Pad right so forming + suggestion +1/+2 candles are visible
+    chart.timeScale().applyOptions({ rightOffset: 12 })
     chart.timeScale().setVisibleLogicalRange({
       from: Math.max(-0.5, n - show - 0.5),
-      to: n + 2.5,
+      to: n + 3,
     })
     series.priceScale().applyOptions({ autoScale: true })
     userInteractedRef.current = false
