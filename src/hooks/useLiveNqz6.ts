@@ -1,26 +1,26 @@
 import { useEffect, useRef, useState } from 'react'
-import { analyzeNextCandle } from '../lib/analyzeNextCandle'
+import { analyzeTwoCandles } from '../lib/analyzeNextCandle'
 import { fetchNqz6Snapshot } from '../lib/fetchNqz6'
-import type { MarketSnapshot, NextCandleSuggestion } from '../lib/types'
+import type { DualCandleSuggestions, MarketSnapshot } from '../lib/types'
 
-/** Fast poll — Yahoo still delays; we refresh as often as the feed allows. */
 const POLL_MS = 3_000
 
 export type LiveState = {
   snapshot: MarketSnapshot | null
-  suggestion: NextCandleSuggestion | null
+  suggestions: DualCandleSuggestions | null
+  /** @deprecated alias of suggestions.plus1 */
+  suggestion: DualCandleSuggestions['plus1'] | null
   status: 'idle' | 'loading' | 'live' | 'error'
   error: string | null
   lastSuccessAt: number | null
   pollMs: number
-  /** Wall-clock tick so data-age labels stay honest between polls. */
   now: number
   priceFlash: 'up' | 'down' | null
 }
 
 export function useLiveNqz6(): LiveState {
   const [snapshot, setSnapshot] = useState<MarketSnapshot | null>(null)
-  const [suggestion, setSuggestion] = useState<NextCandleSuggestion | null>(
+  const [suggestions, setSuggestions] = useState<DualCandleSuggestions | null>(
     null,
   )
   const [status, setStatus] = useState<LiveState['status']>('loading')
@@ -56,8 +56,9 @@ export function useLiveNqz6(): LiveState {
         }
         lastPriceRef.current = next.livePrice
 
+        const dual = analyzeTwoCandles(next.candles, next.livePrice)
         setSnapshot(next)
-        setSuggestion(analyzeNextCandle(next.candles, next.livePrice))
+        setSuggestions(dual)
         setLastSuccessAt(Date.now())
         setNow(Date.now())
         setError(null)
@@ -66,7 +67,7 @@ export function useLiveNqz6(): LiveState {
         if (controller.signal.aborted) return
         const message = err instanceof Error ? err.message : 'Fetch failed'
         setError(message)
-        setStatus((prev) => (prev === 'live' ? 'live' : 'error'))
+        setStatus((s) => (s === 'live' ? 'live' : 'error'))
       } finally {
         inFlight.current = false
       }
@@ -83,7 +84,8 @@ export function useLiveNqz6(): LiveState {
 
   return {
     snapshot,
-    suggestion,
+    suggestions,
+    suggestion: suggestions?.plus1 ?? null,
     status,
     error,
     lastSuccessAt,

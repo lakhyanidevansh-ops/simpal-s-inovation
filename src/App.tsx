@@ -9,6 +9,7 @@ import { useLiveNqz6 } from './hooks/useLiveNqz6'
 export default function App() {
   const {
     snapshot,
+    suggestions,
     suggestion,
     status,
     error,
@@ -18,7 +19,7 @@ export default function App() {
     priceFlash,
   } = useLiveNqz6()
 
-  const live = Boolean(snapshot && suggestion)
+  const live = Boolean(snapshot && suggestions)
 
   return (
     <div className="flex h-full min-h-screen flex-col bg-[var(--tvate-bg)] text-[var(--tvate-text)]">
@@ -104,19 +105,19 @@ export default function App() {
         </div>
       )}
 
-      {live && snapshot && suggestion && (
+      {live && snapshot && suggestions && suggestion && (
         <>
           <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px]">
             <div className="min-h-[460px] border-b border-[var(--tvate-border)] lg:border-b-0">
               <CandleChart
                 candles={snapshot.candles}
-                suggestion={suggestion}
+                suggestions={suggestions}
                 livePrice={snapshot.livePrice}
                 mark={snapshot.mark}
               />
             </div>
             <OrderTicketPanel
-              suggestion={suggestion}
+              suggestions={suggestions}
               lastPrice={snapshot.livePrice}
               symbol={snapshot.symbol}
             />

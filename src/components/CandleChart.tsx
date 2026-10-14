@@ -24,7 +24,12 @@ import {
   formatClock,
   formatInZone,
 } from '../lib/time'
-import type { Candle, MarkPrint, NextCandleSuggestion } from '../lib/types'
+import type {
+  Candle,
+  DualCandleSuggestions,
+  MarkPrint,
+  NextCandleSuggestion,
+} from '../lib/types'
 
 const COLORS = {
   bg: '#0b0d10',
@@ -49,7 +54,7 @@ const DEFAULT_VISIBLE = 100
 
 type Props = {
   candles: Candle[]
-  suggestion: NextCandleSuggestion | null
+  suggestions: DualCandleSuggestions | null
   livePrice?: number
   mark: MarkPrint
 }
@@ -77,7 +82,8 @@ function suggestionHighlight(bias: NextCandleSuggestion['bias'] | undefined) {
   }
 }
 
-export function CandleChart({ candles, suggestion, livePrice, mark }: Props) {
+export function CandleChart({ candles, suggestions, livePrice, mark }: Props) {
+  const suggestion = suggestions?.plus1 ?? null
   const wrapRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -382,8 +388,20 @@ export function CandleChart({ candles, suggestion, livePrice, mark }: Props) {
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
         axisLabelVisible: true,
-        title: 'INV',
+        title: '+1 INV',
       }),
+      ...(suggestions?.plus2
+        ? [
+            series.createPriceLine({
+              price: suggestions.plus2.invalidation,
+              color: '#7c8db5',
+              lineWidth: 1,
+              lineStyle: LineStyle.SparseDotted,
+              axisLabelVisible: true,
+              title: '+2 INV',
+            }),
+          ]
+        : []),
       series.createPriceLine({
         price: suggestion.ema9,
         color: COLORS.ema,
@@ -401,10 +419,9 @@ export function CandleChart({ candles, suggestion, livePrice, mark }: Props) {
         title: 'MARK',
       }),
     ]
-  }, [suggestion, livePrice])
+  }, [suggestion, suggestions, livePrice])
 
   const forming = candles.find((c) => c.forming) ?? candles[candles.length - 1]
-  const nextOpen = forming ? forming.time + BAR_SEC : null
 
   const btn =
     'rounded border border-[var(--tvate-border)] bg-[var(--tvate-panel-2)] px-2 py-1 text-[11px] font-semibold text-[var(--tvate-text)] hover:bg-[#222833] active:bg-[#2a313c]'
@@ -443,7 +460,7 @@ export function CandleChart({ candles, suggestion, livePrice, mark }: Props) {
         />
 
         <div className="pointer-events-none absolute left-3 top-3 z-10 max-w-[340px] space-y-1.5">
-          {suggestion && (
+          {suggestions && (
             <div
               className="rounded border px-2.5 py-1.5 text-[11px] shadow-lg"
               style={{
@@ -452,22 +469,31 @@ export function CandleChart({ candles, suggestion, livePrice, mark }: Props) {
                 color: COLORS.nextBorder,
               }}
             >
-            <div className="font-semibold tracking-wide">
-              {glow.label} · SUGGESTION (overlay)
+              <div className="font-semibold tracking-wide">
+                {glow.label} · +1 / +2 SUGGESTION
+              </div>
+              <div className="mt-1 font-mono text-[10px] leading-snug text-[var(--tvate-text)]">
+                <div>
+                  <span className="text-[#5aa2ff]">+1 {suggestions.plus1.bucketLabel}</span>
+                  {' · '}
+                  {suggestions.plus1.oneLiner}
+                </div>
+                <div className="mt-1 text-[var(--tvate-muted)]">
+                  <span className="text-[#7c8db5]">+2 {suggestions.plus2.bucketLabel}</span>
+                  {' · '}
+                  {suggestions.plus2.oneLiner}
+                </div>
+              </div>
             </div>
-            <div className="mt-0.5 font-mono text-[10px] leading-snug text-[var(--tvate-text)]">
-              {suggestion.oneLiner}
-            </div>
-          </div>
-        )}
+          )}
 
           <div className="rounded border border-[var(--tvate-border)] bg-[rgba(18,21,26,0.92)] px-2.5 py-1.5 font-mono text-[10px] text-[var(--tvate-muted)]">
             <div className="text-[var(--tvate-text)]">
-              Forming = Tradovate-style live bar (one bucket) · Axis CT
+              Forming = live bar · +1/+2 = next closed buckets (labels only)
             </div>
             {forming && (
               <div>
-                Open bucket{' '}
+                Forming{' '}
                 <span className="text-[#5aa2ff]">
                   {formatClock(forming.time, EXCHANGE_TZ)}–
                   {formatClock(forming.time + BAR_SEC, EXCHANGE_TZ)} CT
@@ -476,15 +502,16 @@ export function CandleChart({ candles, suggestion, livePrice, mark }: Props) {
                 mark {formatClock(mark.sourceTime, EXCHANGE_TZ, true)} CT
               </div>
             )}
-            {nextOpen != null && (
+            {suggestions && (
               <div>
-                Closes → new forming at{' '}
+                Windows{' '}
                 <span className="text-[var(--tvate-text)]">
-                  {formatClock(nextOpen, EXCHANGE_TZ)} CT
+                  +1 {suggestions.plus1.bucketLabel}
                 </span>
-                {mark.freshness !== 'live' && (
-                  <span> · feed-time</span>
-                )}
+                {' · '}
+                <span className="text-[var(--tvate-text)]">
+                  +2 {suggestions.plus2.bucketLabel}
+                </span>
               </div>
             )}
           </div>

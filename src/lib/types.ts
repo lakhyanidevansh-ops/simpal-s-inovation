@@ -35,6 +35,22 @@ export type NextCandleSuggestion = {
   analyzedBars: number
 }
 
+/** Live call for candle +1 or +2 after the forming bucket. */
+export type HorizonSuggestion = NextCandleSuggestion & {
+  horizon: 1 | 2
+  /** CME CT bucket label e.g. 13:45–13:50 */
+  bucketLabel: string
+  openTime: number
+  closeTime: number
+}
+
+export type DualCandleSuggestions = {
+  plus1: HorizonSuggestion
+  plus2: HorizonSuggestion
+  /** Back-compat alias = plus1 for older UI bits */
+  primary: HorizonSuggestion
+}
+
 export type MarkPrint = {
   symbol: string
   price: number
