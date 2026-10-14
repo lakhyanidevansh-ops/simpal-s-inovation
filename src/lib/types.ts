@@ -1,11 +1,16 @@
 export type Candle = {
+  /** Bar open unix seconds — exact 5m epoch */
   time: number
   open: number
   high: number
   low: number
   close: number
   volume: number
+  /** Exclusive bar end (= time + 300) */
+  closeTime?: number
   forming?: boolean
+  /** Gap from previous bar open in seconds when > 5m (session break) */
+  gapFromPrevSec?: number
 }
 
 export type Bias = 'bullish' | 'bearish' | 'neutral'

@@ -1,7 +1,10 @@
+import {
+  normalizeFiveMinuteCandles,
+  patchFormingFromMark,
+} from './normalizeCandles'
 import type { Candle, MarkPrint, MarketSnapshot } from './types'
 
 const SYMBOL = 'NQZ26.CME'
-const BAR_SEC = 300
 
 type YahooQuote = {
   open?: Array<number | null>
@@ -16,6 +19,7 @@ type YahooMeta = {
   shortName?: string
   exchangeName?: string
   timezone?: string
+  exchangeTimezoneName?: string
   regularMarketPrice?: number
   regularMarketTime?: number
   previousClose?: number
@@ -33,11 +37,7 @@ type YahooChartResponse = {
   }
 }
 
-function alignBar(ts: number): number {
-  return Math.floor(ts / BAR_SEC) * BAR_SEC
-}
-
-function cleanCandles(timestamps: number[], quote: YahooQuote): Candle[] {
+function parseRawCandles(timestamps: number[], quote: YahooQuote): Candle[] {
   const opens = quote.open ?? []
   const highs = quote.high ?? []
   const lows = quote.low ?? []
@@ -60,56 +60,7 @@ function cleanCandles(timestamps: number[], quote: YahooQuote): Candle[] {
       volume: volumes[i] ?? 0,
     })
   }
-
-  if (out.length >= 2) {
-    const last = out[out.length - 1]
-    const prev = out[out.length - 2]
-    if (
-      last.time === prev.time ||
-      (last.volume === 0 &&
-        last.high === last.low &&
-        last.open === last.close &&
-        last.time - prev.time < 60 &&
-        alignBar(last.time) === alignBar(prev.time) &&
-        last.time !== alignBar(last.time))
-    ) {
-      out.pop()
-    }
-  }
-
   return out
-}
-
-function patchFormingCandle(candles: Candle[], livePrice: number): Candle[] {
-  if (!candles.length) return candles
-  const next = candles.map((c) => ({ ...c }))
-  const last = next[next.length - 1]
-  const nowSec = Math.floor(Date.now() / 1000)
-  const expectedBar = alignBar(nowSec)
-  const incomplete = last.volume === 0 || last.time >= expectedBar - BAR_SEC
-
-  if (last.time === expectedBar || incomplete) {
-    last.close = livePrice
-    last.high = Math.max(last.high, livePrice, last.open)
-    last.low = Math.min(last.low, livePrice, last.open)
-    last.forming = true
-  } else if (expectedBar > last.time) {
-    next.push({
-      time: expectedBar,
-      open: livePrice,
-      high: livePrice,
-      low: livePrice,
-      close: livePrice,
-      volume: 0,
-      forming: true,
-    })
-  } else {
-    last.close = livePrice
-    last.high = Math.max(last.high, livePrice)
-    last.low = Math.min(last.low, livePrice)
-    last.forming = true
-  }
-  return next
 }
 
 async function fetchChart(
@@ -135,9 +86,10 @@ async function fetchChart(
     const err = data.chart?.error?.description ?? 'empty chart result'
     throw new Error(`Yahoo chart: ${err}`)
   }
+  const raw = parseRawCandles(result.timestamp, result.indicators.quote[0])
   return {
     meta: result.meta ?? {},
-    candles: cleanCandles(result.timestamp, result.indicators.quote[0]),
+    candles: normalizeFiveMinuteCandles(raw),
   }
 }
 
@@ -154,8 +106,6 @@ async function fetchMark(signal?: AbortSignal): Promise<MarkPrint> {
 export async function fetchNqz6Snapshot(
   signal?: AbortSignal,
 ): Promise<MarketSnapshot> {
-  // Primary mark from server (Tradovate RT if configured, else delayed Yahoo)
-  // Chart OHLC still from Yahoo 5m (structure only) — never pretend chart is RT.
   const [mark, five] = await Promise.all([
     fetchMark(signal),
     fetchChart('5m', '5d', signal),
@@ -163,17 +113,19 @@ export async function fetchNqz6Snapshot(
 
   if (!five.candles.length) throw new Error('No valid 5m candles returned')
 
-  const livePrice = mark.price
-  const patched = patchFormingCandle(five.candles, livePrice)
+  const patched = patchFormingFromMark(five.candles, mark)
   const meta = five.meta
+  // Prefer CME exchange timezone for labels; Yahoo often reports EDT
+  const exchangeTz =
+    meta.exchangeTimezoneName || 'America/Chicago'
 
   return {
     symbol: mark.symbol || meta.symbol || SYMBOL,
     shortName: meta.shortName ?? 'Nasdaq 100 Dec 26',
     exchange: meta.exchangeName ?? 'CME',
-    timezone: meta.timezone ?? 'America/New_York',
-    livePrice,
-    regularMarketPrice: livePrice,
+    timezone: exchangeTz,
+    livePrice: mark.price,
+    regularMarketPrice: mark.price,
     previousClose: mark.previousClose,
     change: mark.change,
     changePercent: mark.changePercent,
@@ -181,7 +133,7 @@ export async function fetchNqz6Snapshot(
     candles: patched,
     fetchedAt: Date.now(),
     source: mark.source,
-    forming: Boolean(patched[patched.length - 1]?.forming),
+    forming: Boolean(patched.some((c) => c.forming)),
     mark,
   }
 }

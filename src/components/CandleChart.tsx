@@ -3,19 +3,28 @@ import {
   ColorType,
   createChart,
   createSeriesMarkers,
+  CrosshairMode,
+  HistogramSeries,
   LineStyle,
   type IChartApi,
   type IPriceLine,
   type ISeriesApi,
   type ISeriesMarkersPluginApi,
   type CandlestickData,
+  type HistogramData,
+  type MouseEventParams,
   type SeriesMarker,
   type Time,
 } from 'lightweight-charts'
-import { useEffect, useRef } from 'react'
-import type { Candle, NextCandleSuggestion } from '../lib/types'
-
-const BAR_SEC = 300
+import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  BAR_SEC,
+  DISPLAY_ET,
+  EXCHANGE_TZ,
+  formatClock,
+  formatInZone,
+} from '../lib/time'
+import type { Candle, MarkPrint, NextCandleSuggestion } from '../lib/types'
 
 const COLORS = {
   bg: '#0b0d10',
@@ -27,9 +36,10 @@ const COLORS = {
   down: '#e74c3c',
   upBorder: '#27ae60',
   downBorder: '#c0392b',
+  volUp: 'rgba(46, 204, 113, 0.55)',
+  volDown: 'rgba(231, 76, 60, 0.55)',
   invalid: '#f0a500',
   ema: '#3d8bfd',
-  /** NEXT / forming suggestion highlight — always blue */
   nextBody: 'rgba(61, 139, 253, 0.42)',
   nextBorder: '#3d8bfd',
   nextWick: '#5aa2ff',
@@ -39,6 +49,19 @@ type Props = {
   candles: Candle[]
   suggestion: NextCandleSuggestion | null
   livePrice?: number
+  mark: MarkPrint
+}
+
+type HoverInfo = {
+  openTime: number
+  closeTime: number
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+  forming?: boolean
+  isNext?: boolean
 }
 
 function suggestionHighlight(bias: NextCandleSuggestion['bias'] | undefined) {
@@ -52,12 +75,20 @@ function suggestionHighlight(bias: NextCandleSuggestion['bias'] | undefined) {
   }
 }
 
-export function CandleChart({ candles, suggestion, livePrice }: Props) {
+export function CandleChart({ candles, suggestion, livePrice, mark }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
+  const volumeRef = useRef<ISeriesApi<'Histogram'> | null>(null)
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null)
   const linesRef = useRef<IPriceLine[]>([])
+  const byTimeRef = useRef<Map<number, HoverInfo>>(new Map())
+  const [hover, setHover] = useState<HoverInfo | null>(null)
+
+  const glow = useMemo(
+    () => suggestionHighlight(suggestion?.bias),
+    [suggestion?.bias],
+  )
 
   useEffect(() => {
     const el = wrapRef.current
@@ -77,17 +108,28 @@ export function CandleChart({ candles, suggestion, livePrice }: Props) {
       },
       rightPriceScale: {
         borderColor: COLORS.border,
-        scaleMargins: { top: 0.08, bottom: 0.12 },
+        scaleMargins: { top: 0.06, bottom: 0.28 },
       },
       timeScale: {
         borderColor: COLORS.border,
         timeVisible: true,
         secondsVisible: false,
-        rightOffset: 8,
-        barSpacing: 9,
+        rightOffset: 4,
+        barSpacing: 8,
+        minBarSpacing: 4,
+        tickMarkFormatter: (time: Time) => {
+          const sec = typeof time === 'number' ? time : 0
+          return formatClock(sec, EXCHANGE_TZ, false)
+        },
+      },
+      localization: {
+        timeFormatter: (time: Time) => {
+          const sec = typeof time === 'number' ? time : 0
+          return `${formatClock(sec, EXCHANGE_TZ, false)} CT / ${formatClock(sec, DISPLAY_ET, false)} ET`
+        },
       },
       crosshair: {
-        mode: 1,
+        mode: CrosshairMode.Normal,
         vertLine: {
           color: COLORS.cross,
           width: 1,
@@ -111,18 +153,42 @@ export function CandleChart({ candles, suggestion, livePrice }: Props) {
       wickUpColor: COLORS.up,
       wickDownColor: COLORS.down,
       borderVisible: true,
+      wickVisible: true,
       priceLineVisible: true,
       lastValueVisible: true,
     })
 
+    const volume = chart.addSeries(HistogramSeries, {
+      priceFormat: { type: 'volume' },
+      priceScaleId: 'vol',
+    })
+    chart.priceScale('vol').applyOptions({
+      scaleMargins: { top: 0.78, bottom: 0 },
+      borderVisible: false,
+    })
+
     chartRef.current = chart
     seriesRef.current = series
+    volumeRef.current = volume
     markersRef.current = createSeriesMarkers(series, [])
 
+    const onMove = (param: MouseEventParams<Time>) => {
+      if (!param.time) {
+        setHover(null)
+        return
+      }
+      const sec = typeof param.time === 'number' ? param.time : 0
+      const info = byTimeRef.current.get(sec)
+      setHover(info ?? null)
+    }
+    chart.subscribeCrosshairMove(onMove)
+
     return () => {
+      chart.unsubscribeCrosshairMove(onMove)
       chart.remove()
       chartRef.current = null
       seriesRef.current = null
+      volumeRef.current = null
       markersRef.current = null
       linesRef.current = []
     }
@@ -130,51 +196,70 @@ export function CandleChart({ candles, suggestion, livePrice }: Props) {
 
   useEffect(() => {
     const series = seriesRef.current
+    const volume = volumeRef.current
     const chart = chartRef.current
     const markersApi = markersRef.current
-    if (!series || !chart || !candles.length) return
+    if (!series || !volume || !chart || !candles.length) return
 
-    const slice = candles.slice(-90)
-    const last = { ...slice[slice.length - 1] }
-    if (livePrice != null) {
-      last.close = livePrice
-      last.high = Math.max(last.high, livePrice)
-      last.low = Math.min(last.low, livePrice)
-    }
-    const glow = suggestionHighlight(suggestion?.bias)
+    const slice = candles.slice(-96)
+    const last = slice[slice.length - 1]
+    const markInLast =
+      mark.sourceTime >= last.time && mark.sourceTime < last.time + BAR_SEC
 
-    const data: CandlestickData<Time>[] = slice.map((c, idx) => {
-      const isLast = idx === slice.length - 1
-      const close = isLast && livePrice != null ? livePrice : c.close
-      const high =
-        isLast && livePrice != null ? Math.max(c.high, livePrice) : c.high
-      const low =
-        isLast && livePrice != null ? Math.min(c.low, livePrice) : c.low
-      const base: CandlestickData<Time> = {
+    const candleData: CandlestickData<Time>[] = []
+    const volData: HistogramData<Time>[] = []
+    const map = new Map<number, HoverInfo>()
+
+    for (let i = 0; i < slice.length; i++) {
+      const c = slice[i]
+      // Whitespace for session gaps: LWC leaves a visual hole when times skip
+      const isLast = i === slice.length - 1
+      let close = c.close
+      let high = c.high
+      let low = c.low
+      if (isLast && livePrice != null && (c.forming || markInLast)) {
+        close = livePrice
+        high = Math.max(high, livePrice)
+        low = Math.min(low, livePrice)
+      }
+
+      const point: CandlestickData<Time> = {
         time: c.time as Time,
         open: c.open,
         high,
         low,
         close,
       }
-      if (isLast && suggestion) {
-        return {
-          ...base,
-          color: glow.body,
-          borderColor: glow.border,
-          wickColor: glow.wick,
-        }
+      if ((c.forming || isLast) && suggestion) {
+        point.color = glow.body
+        point.borderColor = glow.border
+        point.wickColor = glow.wick
       }
-      return base
-    })
+      candleData.push(point)
+      volData.push({
+        time: c.time as Time,
+        value: c.volume,
+        color: close >= c.open ? COLORS.volUp : COLORS.volDown,
+      })
+      map.set(c.time, {
+        openTime: c.time,
+        closeTime: c.closeTime ?? c.time + BAR_SEC,
+        open: c.open,
+        high,
+        low,
+        close,
+        volume: c.volume,
+        forming: c.forming,
+      })
+    }
 
+    // Projected NEXT bar = next 5m bucket AFTER feed last bar (not wall-clock now)
     if (suggestion) {
-      const nextTime = (last.time + BAR_SEC) as Time
+      const nextTime = last.time + BAR_SEC
       const open = livePrice ?? last.close
       let high = open
       let low = open
       let close = open
-
       if (suggestion.bias === 'bearish') {
         const target = Math.min(suggestion.swingLow, open - 8)
         close = Math.min(open - 4, (open + target) / 2)
@@ -189,9 +274,8 @@ export function CandleChart({ candles, suggestion, livePrice }: Props) {
         high = open + 6
         low = open - 6
       }
-
-      data.push({
-        time: nextTime,
+      candleData.push({
+        time: nextTime as Time,
         open,
         high,
         low,
@@ -200,98 +284,163 @@ export function CandleChart({ candles, suggestion, livePrice }: Props) {
         borderColor: glow.border,
         wickColor: glow.wick,
       })
+      volData.push({
+        time: nextTime as Time,
+        value: 0,
+        color: 'rgba(61, 139, 253, 0.35)',
+      })
+      map.set(nextTime, {
+        openTime: nextTime,
+        closeTime: nextTime + BAR_SEC,
+        open,
+        high,
+        low,
+        close,
+        volume: 0,
+        isNext: true,
+      })
     }
 
-    series.setData(data)
+    byTimeRef.current = map
+    series.setData(candleData)
+    volume.setData(volData)
 
-    const markers: SeriesMarker<Time>[] = suggestion
-      ? [
-          {
-            time: last.time as Time,
-            position: 'aboveBar',
-            color: glow.border,
-            shape: 'arrowDown',
-            text: 'FORMING',
-          },
-          {
-            time: (last.time + BAR_SEC) as Time,
-            position: 'aboveBar',
-            color: glow.border,
-            shape: 'circle',
-            text: glow.label,
-          },
-        ]
-      : []
+    const markers: SeriesMarker<Time>[] = []
+    if (suggestion) {
+      markers.push({
+        time: last.time as Time,
+        position: 'aboveBar',
+        color: glow.border,
+        shape: 'arrowDown',
+        text: last.forming ? 'FORMING' : 'LAST',
+      })
+      markers.push({
+        time: (last.time + BAR_SEC) as Time,
+        position: 'aboveBar',
+        color: glow.border,
+        shape: 'circle',
+        text: glow.label,
+      })
+    }
     markersApi?.setMarkers(markers)
 
-    chart.timeScale().scrollToRealTime()
-  }, [candles, suggestion, livePrice])
+    // Stay on feed timeline — do not jump to wall-clock "now"
+    chart.timeScale().fitContent()
+  }, [candles, suggestion, livePrice, mark, glow])
 
   useEffect(() => {
     const series = seriesRef.current
     if (!series || !suggestion) return
-
     for (const line of linesRef.current) series.removePriceLine(line)
-
-    const glow = suggestionHighlight(suggestion.bias)
-    const mark = livePrice ?? suggestion.lastClose
-    const specs = [
-      {
+    const price = livePrice ?? suggestion.lastClose
+    linesRef.current = [
+      series.createPriceLine({
         price: suggestion.invalidation,
         color: COLORS.invalid,
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
         title: 'INV',
-        style: LineStyle.Dashed,
-      },
-      {
+      }),
+      series.createPriceLine({
         price: suggestion.ema9,
         color: COLORS.ema,
-        title: 'EMA9',
-        style: LineStyle.Dotted,
-      },
-      {
-        price: mark,
-        color: glow.border,
-        title: 'MARK',
-        style: LineStyle.Solid,
-      },
-    ]
-
-    linesRef.current = specs.map((l) =>
-      series.createPriceLine({
-        price: l.price,
-        color: l.color,
         lineWidth: 1,
-        lineStyle: l.style,
+        lineStyle: LineStyle.Dotted,
         axisLabelVisible: true,
-        title: l.title,
+        title: 'EMA9',
       }),
-    )
+      series.createPriceLine({
+        price,
+        color: COLORS.nextBorder,
+        lineWidth: 1,
+        lineStyle: LineStyle.Solid,
+        axisLabelVisible: true,
+        title: 'MARK',
+      }),
+    ]
   }, [suggestion, livePrice])
 
+  const forming = candles.find((c) => c.forming) ?? candles[candles.length - 1]
+  const nextOpen = forming ? forming.time + BAR_SEC : null
+
   return (
-    <div className="relative h-full min-h-[460px] w-full bg-[var(--tvate-bg)]">
+    <div className="relative h-full min-h-[520px] w-full bg-[var(--tvate-bg)]">
       <div
         ref={wrapRef}
         className="absolute inset-0"
-        aria-label="Tradovate-style NQZ6 5-minute chart"
+        aria-label="Tradovate-style NQZ6 5-minute chart (CME time)"
       />
-      {suggestion && (
-        <div
-          className="pointer-events-none absolute left-3 top-3 z-10 max-w-[300px] rounded border px-2.5 py-1.5 text-[11px] shadow-lg"
-          style={{
-            background: 'rgba(18, 21, 26, 0.94)',
-            borderColor: COLORS.nextBorder,
-            color: COLORS.nextBorder,
-          }}
-        >
-          <div className="font-semibold tracking-wide">
-            {suggestionHighlight(suggestion.bias).label} · NEXT-CANDLE CALL
+
+      <div className="pointer-events-none absolute left-3 top-3 z-10 max-w-[340px] space-y-1.5">
+        {suggestion && (
+          <div
+            className="rounded border px-2.5 py-1.5 text-[11px] shadow-lg"
+            style={{
+              background: 'rgba(18, 21, 26, 0.94)',
+              borderColor: COLORS.nextBorder,
+              color: COLORS.nextBorder,
+            }}
+          >
+            <div className="font-semibold tracking-wide">
+              {glow.label} · NEXT-CANDLE CALL
+            </div>
+            <div className="mt-0.5 font-mono text-[10px] leading-snug text-[var(--tvate-text)]">
+              {suggestion.oneLiner}
+            </div>
           </div>
-          <div className="mt-0.5 font-mono text-[10px] leading-snug text-[var(--tvate-text)]">
-            {suggestion.oneLiner}
+        )}
+
+        <div className="rounded border border-[var(--tvate-border)] bg-[rgba(18,21,26,0.92)] px-2.5 py-1.5 font-mono text-[10px] text-[var(--tvate-muted)]">
+          <div className="text-[var(--tvate-text)]">
+            Axis: CME {EXCHANGE_TZ.split('/')[1]} (CT) · also shown ET in
+            crosshair
           </div>
+          {forming && (
+            <div>
+              Forming bucket{' '}
+              <span className="text-[var(--tvate-text)]">
+                {formatClock(forming.time, EXCHANGE_TZ)}–
+                {formatClock(forming.time + BAR_SEC, EXCHANGE_TZ)} CT
+              </span>
+              {' · '}
+              mark as-of {formatClock(mark.sourceTime, EXCHANGE_TZ, true)} CT
+            </div>
+          )}
+          {nextOpen != null && (
+            <div>
+              NEXT zone opens{' '}
+              <span className="text-[#5aa2ff]">
+                {formatClock(nextOpen, EXCHANGE_TZ)} CT
+              </span>
+              {mark.freshness !== 'live' && (
+                <span> · feed-time (not wall-clock now)</span>
+              )}
+            </div>
+          )}
         </div>
-      )}
+
+        {hover && (
+          <div className="rounded border border-[var(--tvate-border)] bg-[rgba(18,21,26,0.95)] px-2.5 py-1.5 font-mono text-[10px] text-[var(--tvate-text)]">
+            <div className="text-[var(--tvate-muted)]">
+              {hover.isNext ? 'NEXT zone' : hover.forming ? 'Forming' : 'Bar'} ·{' '}
+              {formatInZone(hover.openTime, EXCHANGE_TZ)} CT →{' '}
+              {formatClock(hover.closeTime, EXCHANGE_TZ)} CT
+            </div>
+            <div className="text-[var(--tvate-muted)]">
+              ET {formatClock(hover.openTime, DISPLAY_ET)}–
+              {formatClock(hover.closeTime, DISPLAY_ET)}
+            </div>
+            <div>
+              O {hover.open.toFixed(2)} · H {hover.high.toFixed(2)} · L{' '}
+              {hover.low.toFixed(2)} · C {hover.close.toFixed(2)}
+            </div>
+            <div className="text-[var(--tvate-muted)]">
+              Vol {Math.round(hover.volume).toLocaleString()}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

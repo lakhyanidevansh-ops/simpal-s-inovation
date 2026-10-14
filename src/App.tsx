@@ -112,6 +112,7 @@ export default function App() {
                 candles={snapshot.candles}
                 suggestion={suggestion}
                 livePrice={snapshot.livePrice}
+                mark={snapshot.mark}
               />
             </div>
             <OrderTicketPanel
