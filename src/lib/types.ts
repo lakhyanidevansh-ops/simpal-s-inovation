@@ -17,6 +17,18 @@ export type Bias = 'bullish' | 'bearish' | 'neutral'
 
 export type Freshness = 'live' | 'delayed' | 'stale' | 'unavailable'
 
+/** Projected OHLC for a suggestion candle (chart + ticket). */
+export type ProjectedBar = {
+  open: number
+  high: number
+  low: number
+  close: number
+  /** Expected move from open as % of price (capped ≤ 1%). */
+  movePct: number
+  /** ± band around expected close as % of price (calibration width). */
+  bandPct: number
+}
+
 export type NextCandleSuggestion = {
   bias: Bias
   lastClose: number
@@ -33,6 +45,14 @@ export type NextCandleSuggestion = {
   swingHigh: number
   swingLow: number
   analyzedBars: number
+  /** ATR(14) of closed 5m bars — sizes the projected candle. */
+  atr: number
+  /** Walk-forward direction hit-rate on last N closed bars (0–1). */
+  recentHitRate: number
+  /** Composite signal score −100…+100 (bearish…bullish). */
+  score: number
+  /** Chart-ready projected OHLC for this horizon. */
+  projected: ProjectedBar
 }
 
 /** Live call for candle +1 or +2 after the forming bucket. */
@@ -49,6 +69,13 @@ export type DualCandleSuggestions = {
   plus2: HorizonSuggestion
   /** Back-compat alias = plus1 for older UI bits */
   primary: HorizonSuggestion
+  /** Shared model diagnostics */
+  model: {
+    atr: number
+    recentHitRate: number
+    sampleSize: number
+    maxMovePct: number
+  }
 }
 
 export type MarkPrint = {

@@ -20,12 +20,7 @@ function HorizonCard({
   title: string
 }) {
   const accent = biasAccent(s.bias)
-  const vs =
-    s.expectedVsPriorClose === 'higher'
-      ? `Higher than ${s.lastClose.toFixed(2)}`
-      : s.expectedVsPriorClose === 'lower'
-        ? `Lower than ${s.lastClose.toFixed(2)}`
-        : `Near ${s.lastClose.toFixed(2)}`
+  const p = s.projected
 
   return (
     <div
@@ -38,24 +33,48 @@ function HorizonCard({
         </div>
         <div className="font-mono text-[10px] text-[#5aa2ff]">{s.bucketLabel}</div>
       </div>
-      <div className="text-base font-bold uppercase" style={{ color: accent }}>
-        {s.bias}
+      <div className="flex items-baseline justify-between gap-2">
+        <div className="text-base font-bold uppercase" style={{ color: accent }}>
+          {s.bias}
+        </div>
+        <div className="font-mono text-[10px] text-[var(--tvate-muted)]">
+          score {s.score > 0 ? '+' : ''}
+          {s.score} · {s.confidence}
+        </div>
       </div>
       <p className="mt-0.5 font-mono text-[10px] leading-snug text-[var(--tvate-text)]">
         {s.oneLiner}
       </p>
       <dl className="mt-1.5 space-y-0.5 text-[10px]">
         <div className="flex justify-between gap-2">
-          <dt className="text-[var(--tvate-muted)]">Expect</dt>
-          <dd className="font-mono text-right">{vs}</dd>
+          <dt className="text-[var(--tvate-muted)]">Exp close</dt>
+          <dd className="font-mono text-right font-semibold">
+            {p.close.toFixed(2)}
+            <span className="ml-1 text-[var(--tvate-muted)]">
+              ({p.movePct >= 0 ? '+' : ''}
+              {p.movePct.toFixed(2)}%)
+            </span>
+          </dd>
+        </div>
+        <div className="flex justify-between gap-2">
+          <dt className="text-[var(--tvate-muted)]">Band ±</dt>
+          <dd className="font-mono text-right">{p.bandPct.toFixed(2)}%</dd>
+        </div>
+        <div className="flex justify-between gap-2">
+          <dt className="text-[var(--tvate-muted)]">H / L</dt>
+          <dd className="font-mono text-right">
+            {p.high.toFixed(2)} / {p.low.toFixed(2)}
+          </dd>
         </div>
         <div className="flex justify-between gap-2">
           <dt className="text-[var(--tvate-muted)]">Inv</dt>
           <dd className="font-mono text-right">{s.invalidation.toFixed(2)}</dd>
         </div>
         <div className="flex justify-between gap-2">
-          <dt className="text-[var(--tvate-muted)]">Conf</dt>
-          <dd className="font-mono text-right">{s.confidence}</dd>
+          <dt className="text-[var(--tvate-muted)]">Hit rate</dt>
+          <dd className="font-mono text-right">
+            {Math.round(s.recentHitRate * 100)}%
+          </dd>
         </div>
       </dl>
     </div>
@@ -67,12 +86,13 @@ export function OrderTicketPanel({ suggestions, lastPrice, symbol }: Props) {
   const isBull = lead.bias === 'bullish'
   const isBear = lead.bias === 'bearish'
   const accent = biasAccent(lead.bias)
+  const model = suggestions.model
 
   return (
     <aside className="flex h-full min-h-[460px] w-full flex-col border-l border-[var(--tvate-border)] bg-[var(--tvate-panel)]">
       <div className="border-b border-[var(--tvate-border)] px-3 py-2">
         <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--tvate-muted)]">
-          Order ticket · next 2 candles
+          Order ticket · calibrated +1 / +2
         </div>
         <div className="mt-1 flex items-baseline justify-between gap-2">
           <span className="font-mono text-sm font-semibold">{symbol}</span>
@@ -80,6 +100,13 @@ export function OrderTicketPanel({ suggestions, lastPrice, symbol }: Props) {
             {lastPrice.toFixed(2)}
           </span>
         </div>
+        {model && (
+          <div className="mt-1 font-mono text-[10px] text-[var(--tvate-muted)]">
+            ATR {model.atr.toFixed(2)} · WF hit{' '}
+            {Math.round(model.recentHitRate * 100)}% (n={model.sampleSize}) ·
+            move cap {model.maxMovePct}%
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-2 border-b border-[var(--tvate-border)] p-3">
@@ -109,15 +136,12 @@ export function OrderTicketPanel({ suggestions, lastPrice, symbol }: Props) {
 
       <div className="tvate-scroll grid grid-cols-1 gap-2 overflow-y-auto p-2 sm:grid-cols-2">
         <HorizonCard s={suggestions.plus1} title="Candle +1" />
-        <HorizonCard
-          s={suggestions.plus2}
-          title="Candle +2"
-        />
+        <HorizonCard s={suggestions.plus2} title="Candle +2" />
       </div>
 
       <div className="mt-auto border-t border-[var(--tvate-border)] p-3 text-[10px] text-[var(--tvate-muted)]">
-        Blue bar = Tradovate-style forming candle. +1/+2 are suggestion windows
-        after that bucket closes — not ghost candles. Not a real order ticket.
+        Projected OHLC is ATR-sized and capped at 1% of price. Hit-rate is
+        walk-forward on recent closed 5m bars (direction only) — not a guarantee.
       </div>
     </aside>
   )

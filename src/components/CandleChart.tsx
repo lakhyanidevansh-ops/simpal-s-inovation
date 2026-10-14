@@ -30,6 +30,7 @@ import type {
   MarkPrint,
   NextCandleSuggestion,
 } from '../lib/types'
+// DualCandleSuggestions used for projected OHLC suggestion bars
 
 const COLORS = {
   bg: '#0b0d10',
@@ -377,37 +378,13 @@ export function CandleChart({ candles, suggestions, livePrice, mark }: Props) {
       plus1Time = lastRealTime + BAR_SEC
       plus2Time = lastRealTime + BAR_SEC * 2
     }
-    const markPx = livePrice ?? last.close
-
     const pushSuggestionCandle = (
       horizon: 1 | 2,
       openTime: number,
-      bias: NextCandleSuggestion['bias'],
-      inv: number,
-      _refClose: number,
+      s: NonNullable<DualCandleSuggestions['plus1']>,
     ) => {
-      const open = markPx
-      let close = open
-      let high = open
-      let low = open
-      // Always draw a readable body so +1/+2 are obvious on the chart
-      const body = Math.max(
-        horizon === 2 ? 18 : 14,
-        Math.min(32, Math.abs(inv - open) * 0.55 || (horizon === 2 ? 22 : 16)),
-      )
-      if (bias === 'bearish') {
-        close = open - body
-        low = Math.min(close - 8, inv < open ? inv : close - 8)
-        high = open + 5
-      } else if (bias === 'bullish') {
-        close = open + body
-        high = Math.max(close + 8, inv > open ? inv : close + 8)
-        low = open - 5
-      } else {
-        high = open + body * 0.5
-        low = open - body * 0.5
-        close = open + (horizon === 2 ? -3 : 3)
-      }
+      // Use model-projected OHLC (ATR-sized, ≤1% of price) — not a fake tall body
+      const p = s.projected
       const style =
         horizon === 1
           ? {
@@ -422,15 +399,15 @@ export function CandleChart({ candles, suggestions, livePrice, mark }: Props) {
             }
       candleData.push({
         time: openTime as Time,
-        open,
-        high,
-        low,
-        close,
+        open: p.open,
+        high: p.high,
+        low: p.low,
+        close: p.close,
         ...style,
       })
       volData.push({
         time: openTime as Time,
-        value: horizon === 2 ? Math.max(1, last.volume * 0.15) : 0,
+        value: horizon === 2 ? Math.max(1, last.volume * 0.15) : last.volume * 0.1,
         color:
           horizon === 1
             ? 'rgba(110, 176, 255, 0.4)'
@@ -439,10 +416,10 @@ export function CandleChart({ candles, suggestions, livePrice, mark }: Props) {
       map.set(openTime, {
         openTime,
         closeTime: openTime + BAR_SEC,
-        open,
-        high,
-        low,
-        close,
+        open: p.open,
+        high: p.high,
+        low: p.low,
+        close: p.close,
         volume: 0,
         isNext: true,
         forming: false,
@@ -450,22 +427,10 @@ export function CandleChart({ candles, suggestions, livePrice, mark }: Props) {
     }
 
     if (suggestions?.plus1) {
-      pushSuggestionCandle(
-        1,
-        plus1Time,
-        suggestions.plus1.bias,
-        suggestions.plus1.invalidation,
-        suggestions.plus1.lastClose,
-      )
+      pushSuggestionCandle(1, plus1Time, suggestions.plus1)
     }
     if (suggestions?.plus2) {
-      pushSuggestionCandle(
-        2,
-        plus2Time,
-        suggestions.plus2.bias,
-        suggestions.plus2.invalidation,
-        suggestions.plus2.lastClose,
-      )
+      pushSuggestionCandle(2, plus2Time, suggestions.plus2)
     }
 
     byTimeRef.current = map
@@ -624,12 +589,19 @@ export function CandleChart({ candles, suggestions, livePrice, mark }: Props) {
                 <div>
                   <span className="text-[#5aa2ff]">+1 {suggestions.plus1.bucketLabel}</span>
                   {' · '}
-                  {suggestions.plus1.oneLiner}
+                  exp {suggestions.plus1.projected.close.toFixed(2)} (
+                  {suggestions.plus1.projected.movePct >= 0 ? '+' : ''}
+                  {suggestions.plus1.projected.movePct.toFixed(2)}% ±
+                  {suggestions.plus1.projected.bandPct.toFixed(2)}%) · hit{' '}
+                  {Math.round(suggestions.plus1.recentHitRate * 100)}%
                 </div>
                 <div className="mt-1 text-[var(--tvate-muted)]">
                   <span className="text-[#f0a500]">+2 {suggestions.plus2.bucketLabel}</span>
                   {' · '}
-                  {suggestions.plus2.oneLiner}
+                  exp {suggestions.plus2.projected.close.toFixed(2)} (
+                  {suggestions.plus2.projected.movePct >= 0 ? '+' : ''}
+                  {suggestions.plus2.projected.movePct.toFixed(2)}% ±
+                  {suggestions.plus2.projected.bandPct.toFixed(2)}%)
                 </div>
               </div>
             </div>
