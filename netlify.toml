@@ -1,0 +1,49 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# API → Netlify Functions (must be above SPA fallback)
+[[redirects]]
+  from = "/api/mark"
+  to = "/.netlify/functions/mark"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/candles"
+  to = "/.netlify/functions/candles"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/tradovate-status"
+  to = "/.netlify/functions/tradovate-status"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/ticks"
+  to = "/.netlify/functions/ticks"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/yahoo/*"
+  to = "/.netlify/functions/yahoo"
+  status = 200
+  force = true
+
+# SPA fallback
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

@@ -13,7 +13,7 @@ Live **Nasdaq-100 Dec (NQZ6)** desk for Gujju Gaming / Trading Cycle.
 
 Browser paint is **tick-driven**, not a fixed poll. Exchange ticks are not a literal 1µs wall clock — the UI updates as soon as each Tradovate tick arrives and reports the measured gap in microseconds.
 
-## Run
+## Run (local — LIVE Tradovate ticks)
 
 ```bash
 cp .env.example .env   # required for LIVE Tradovate ticks
@@ -22,6 +22,22 @@ npm run dev
 ```
 
 Open **http://127.0.0.1:4317**
+
+## Deploy on Netlify
+
+This repo is calibrated for Netlify static + functions:
+
+| Setting | Value |
+|---------|--------|
+| Build command | `npm run build` |
+| Publish directory | `dist` |
+| Functions | `netlify/functions` (from `netlify.toml`) |
+
+1. Import the GitHub repo in Netlify.
+2. Leave build settings to `netlify.toml` (or set publish = `dist`).
+3. Optional env: `TRADOVATE_*` (status only — **WebSocket ticks need local `npm run dev`**; Netlify serves delayed Yahoo marks via functions).
+
+Blank white screen was caused by Vite loading the Tradovate socket during `vite build`. That is fixed: the feed loads only in `vite` serve mode, and Netlify functions cover `/api/*`.
 
 ### Tradovate env (required for LIVE)
 

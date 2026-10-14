@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { analyzeTwoCandles } from '../lib/analyzeNextCandle'
-import { fetchNqz6Snapshot } from '../lib/fetchNqz6'
+import { fetchMark, fetchNqz6Snapshot } from '../lib/fetchNqz6'
 import { patchFormingFromMark } from '../lib/normalizeCandles'
 import type { DualCandleSuggestions, MarkPrint, MarketSnapshot } from '../lib/types'
 
-/** Structure refresh (5m bars). Marks come from the tick SSE — not this poll. */
+/** Structure refresh (5m bars). */
 const STRUCTURE_POLL_MS = 15_000
+/** Mark poll when SSE is unavailable (Netlify functions are short-lived). */
+const MARK_POLL_MS = 3_000
 
 export type LiveState = {
   snapshot: MarketSnapshot | null
@@ -99,10 +101,39 @@ export function useLiveNqz6(): LiveState {
     setError(null)
   }
 
-  // Tick SSE — every Tradovate MD tick hits the UI immediately
+  // Tick SSE (local Vite) + mark poll fallback (Netlify short SSE / failures)
   useEffect(() => {
-    const es = new EventSource('/api/ticks')
+    let es: EventSource | null = null
+    let pollId: number | null = null
+    let usePoll = false
+
+    const startPoll = () => {
+      if (pollId != null) return
+      usePoll = true
+      const tick = async () => {
+        try {
+          const mark = await fetchMark()
+          applyMark(mark)
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'Mark poll failed')
+        }
+      }
+      void tick()
+      pollId = window.setInterval(() => void tick(), MARK_POLL_MS)
+    }
+
+    try {
+      es = new EventSource('/api/ticks')
+    } catch {
+      startPoll()
+      return () => {
+        if (pollId != null) window.clearInterval(pollId)
+      }
+    }
+
+    let gotFrame = false
     es.addEventListener('mark', (ev) => {
+      gotFrame = true
       try {
         const mark = JSON.parse((ev as MessageEvent).data) as MarkPrint
         applyMark(mark)
@@ -111,10 +142,12 @@ export function useLiveNqz6(): LiveState {
       }
     })
     es.addEventListener('status', (ev) => {
+      gotFrame = true
       try {
         const st = JSON.parse((ev as MessageEvent).data) as {
           configured?: boolean
           missing?: { cid?: boolean; sec?: boolean }
+          platform?: string
           cache?: {
             status?: string
             tickGapUs?: number | null
@@ -126,16 +159,34 @@ export function useLiveNqz6(): LiveState {
         if (st.cache?.status) setTradovateStatus(st.cache.status)
         if (st.cache?.error != null) setTradovateError(st.cache.error)
         if (st.cache?.tickGapUs != null) setTickGapUs(st.cache.tickGapUs)
+        // Netlify functions end after one burst — switch to polling
+        if (st.platform === 'netlify' || st.cache?.status === 'netlify') {
+          es?.close()
+          startPoll()
+        }
       } catch {
         /* ignore */
       }
     })
     es.onerror = () => {
-      // Browser auto-reconnects EventSource; surface soft warning only
-      setError((e) => e ?? 'Tick stream reconnecting…')
+      if (!gotFrame || usePoll) {
+        es?.close()
+        startPoll()
+      }
     }
+
+    // If SSE never delivers (broken proxy), poll after 4s
+    const watchdog = window.setTimeout(() => {
+      if (!gotFrame) {
+        es?.close()
+        startPoll()
+      }
+    }, 4000)
+
     return () => {
-      es.close()
+      window.clearTimeout(watchdog)
+      es?.close()
+      if (pollId != null) window.clearInterval(pollId)
       if (flashTimer.current) window.clearTimeout(flashTimer.current)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -3,25 +3,25 @@ import react from '@vitejs/plugin-react'
 import { config as loadEnv } from 'dotenv'
 import type { Plugin } from 'vite'
 import { defineConfig } from 'vite'
-import {
-  ensureTradovateBoot,
-  getBestMark,
-  getTradovateCandles,
-  onTick,
-  tradovateStatus,
-} from './server/markFeed.ts'
 
 loadEnv()
-ensureTradovateBoot()
 
+/**
+ * Dev-only API middleware. Dynamically imports the Tradovate feed so
+ * `vite build` / Netlify never boots WebSockets during config evaluation
+ * (that hung production builds and produced blank deploys).
+ */
 function markApiPlugin(): Plugin {
   return {
     name: 'nqz6-mark-api',
-    configureServer(server) {
+    apply: 'serve',
+    async configureServer(server) {
+      const feed = await import('./server/markFeed.ts')
+      feed.ensureTradovateBoot()
+
       server.middlewares.use(async (req, res, next) => {
         if (!req.url) return next()
 
-        // Server-Sent Events — push every Tradovate tick to the browser
         if (req.url.startsWith('/api/ticks')) {
           res.writeHead(200, {
             'Content-Type': 'text/event-stream',
@@ -31,20 +31,18 @@ function markApiPlugin(): Plugin {
           })
           res.write(`: tradovate-tick-stream\n\n`)
 
-          // Snapshot immediately
-          void getBestMark().then((mark) => {
+          void feed.getBestMark().then((mark) => {
             res.write(`event: mark\ndata: ${JSON.stringify(mark)}\n\n`)
           })
 
-          const unsub = onTick((mark) => {
+          const unsub = feed.onTick((mark) => {
             res.write(`event: mark\ndata: ${JSON.stringify(mark)}\n\n`)
           })
 
-          // Keepalive + status pulse (~250ms) so UI can show feed health
-          // even between quiet ticks
           const pulse = setInterval(() => {
-            const st = tradovateStatus()
-            res.write(`event: status\ndata: ${JSON.stringify(st)}\n\n`)
+            res.write(
+              `event: status\ndata: ${JSON.stringify(feed.tradovateStatus())}\n\n`,
+            )
           }, 250)
 
           req.on('close', () => {
@@ -56,7 +54,7 @@ function markApiPlugin(): Plugin {
 
         if (req.url.startsWith('/api/mark')) {
           try {
-            const mark = await getBestMark()
+            const mark = await feed.getBestMark()
             res.setHeader('Content-Type', 'application/json')
             res.setHeader('Cache-Control', 'no-store')
             res.end(JSON.stringify(mark))
@@ -74,16 +72,11 @@ function markApiPlugin(): Plugin {
 
         if (req.url.startsWith('/api/candles')) {
           try {
-            const tv = getTradovateCandles()
+            const tv = feed.getTradovateCandles()
             if (tv?.length) {
               res.setHeader('Content-Type', 'application/json')
               res.setHeader('Cache-Control', 'no-store')
-              res.end(
-                JSON.stringify({
-                  source: 'tradovate',
-                  candles: tv,
-                }),
-              )
+              res.end(JSON.stringify({ source: 'tradovate', candles: tv }))
               return
             }
             res.statusCode = 204
@@ -103,7 +96,7 @@ function markApiPlugin(): Plugin {
         if (req.url.startsWith('/api/tradovate-status')) {
           res.setHeader('Content-Type', 'application/json')
           res.setHeader('Cache-Control', 'no-store')
-          res.end(JSON.stringify(tradovateStatus()))
+          res.end(JSON.stringify(feed.tradovateStatus()))
           return
         }
         next()
@@ -114,6 +107,10 @@ function markApiPlugin(): Plugin {
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), markApiPlugin()],
+  build: {
+    outDir: 'dist',
+    sourcemap: true,
+  },
   server: {
     host: '0.0.0.0',
     port: 4317,

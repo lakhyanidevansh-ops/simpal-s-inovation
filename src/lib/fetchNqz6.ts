@@ -103,7 +103,8 @@ async function fetchCandles(
       headers: { Accept: 'application/json' },
       cache: 'no-store',
     })
-    if (res.ok) {
+    // 204 = no Tradovate bars (Netlify / cold feed) — fall through to Yahoo
+    if (res.ok && res.status !== 204) {
       const data = (await res.json()) as {
         source?: string
         candles?: Candle[]
