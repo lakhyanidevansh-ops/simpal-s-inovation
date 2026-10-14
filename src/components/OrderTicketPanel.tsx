@@ -107,9 +107,12 @@ export function OrderTicketPanel({ suggestions, lastPrice, symbol }: Props) {
         </button>
       </div>
 
-      <div className="tvate-scroll space-y-2 overflow-y-auto p-2">
+      <div className="tvate-scroll grid grid-cols-1 gap-2 overflow-y-auto p-2 sm:grid-cols-2">
         <HorizonCard s={suggestions.plus1} title="Candle +1" />
-        <HorizonCard s={suggestions.plus2} title="Candle +2" />
+        <HorizonCard
+          s={suggestions.plus2}
+          title="Candle +2"
+        />
       </div>
 
       <div className="mt-auto border-t border-[var(--tvate-border)] p-3 text-[10px] text-[var(--tvate-muted)]">

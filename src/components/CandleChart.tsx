@@ -48,12 +48,13 @@ const COLORS = {
   nextBody: 'rgba(61, 139, 253, 0.42)',
   nextBorder: '#3d8bfd',
   nextWick: '#5aa2ff',
-  plus1Body: 'rgba(110, 176, 255, 0.35)',
+  plus1Body: 'rgba(110, 176, 255, 0.45)',
   plus1Border: '#6eb0ff',
   plus1Wick: '#8ec4ff',
-  plus2Body: 'rgba(168, 184, 240, 0.4)',
-  plus2Border: '#c5d0ff',
-  plus2Wick: '#c5d0ff',
+  // Distinct from +1 so the 2nd suggestion is obvious on the right edge
+  plus2Body: 'rgba(240, 165, 0, 0.38)',
+  plus2Border: '#f0a500',
+  plus2Wick: '#ffc24d',
 }
 
 const DEFAULT_VISIBLE = 100
@@ -113,11 +114,11 @@ export function CandleChart({ candles, suggestions, livePrice, mark }: Props) {
     if (!chart || !series) return
     const n = barCountRef.current
     if (n <= 0) return
-    const show = Math.min(DEFAULT_VISIBLE, n)
-    // Leave a couple slots for NEXT marker on the right
+    const show = Math.min(DEFAULT_VISIBLE, Math.max(n - 2, 20))
+    // Pad right so forming + suggestion +1/+2 candles are visible
     chart.timeScale().setVisibleLogicalRange({
-      from: n - show - 0.5,
-      to: n + 1.5,
+      from: Math.max(-0.5, n - show - 0.5),
+      to: n + 2.5,
     })
     series.priceScale().applyOptions({ autoScale: true })
     userInteractedRef.current = false
@@ -175,10 +176,10 @@ export function CandleChart({ candles, suggestions, livePrice, mark }: Props) {
         borderColor: COLORS.border,
         timeVisible: true,
         secondsVisible: false,
-        rightOffset: 6,
-        barSpacing: 9,
-        minBarSpacing: 2,
-        lockVisibleTimeRangeOnResize: true,
+        rightOffset: 12,
+        barSpacing: 10,
+        minBarSpacing: 3,
+        lockVisibleTimeRangeOnResize: false,
         tickMarkFormatter: (time: Time) => {
           const sec = typeof time === 'number' ? time : 0
           return formatClock(sec, EXCHANGE_TZ, false)
@@ -261,10 +262,13 @@ export function CandleChart({ candles, suggestions, livePrice, mark }: Props) {
     }
     chart.subscribeCrosshairMove(onMove)
 
+    // Only real pointer gestures count as "user moved the chart"
     const markInteract = () => {
       userInteractedRef.current = true
     }
-    chart.timeScale().subscribeVisibleLogicalRangeChange(markInteract)
+    el.addEventListener('wheel', markInteract, { passive: true })
+    el.addEventListener('mousedown', markInteract)
+    el.addEventListener('touchstart', markInteract, { passive: true })
 
     const onDblClick = () => {
       resetView()
@@ -272,6 +276,9 @@ export function CandleChart({ candles, suggestions, livePrice, mark }: Props) {
     el.addEventListener('dblclick', onDblClick)
 
     return () => {
+      el.removeEventListener('wheel', markInteract)
+      el.removeEventListener('mousedown', markInteract)
+      el.removeEventListener('touchstart', markInteract)
       el.removeEventListener('dblclick', onDblClick)
       chart.unsubscribeCrosshairMove(onMove)
       chart.remove()
@@ -350,9 +357,25 @@ export function CandleChart({ candles, suggestions, livePrice, mark }: Props) {
       })
     }
 
-    // Visible suggestion candles for +1 and +2 (labeled, hollow/faint — not real prints)
+    // Visible suggestion candles for +1 and +2 (labeled — not real prints).
+    // Anchor after the rightmost REAL bar so delayed Yahoo bars never collide
+    // with suggestion times (duplicates would hide +2).
     const formingOpen =
       (slice.find((c) => c.forming) ?? last).time
+    const lastRealTime = last.time
+    const existingTimes = new Set(
+      candleData.map((c) => c.time as unknown as number),
+    )
+    let plus1Time = formingOpen + BAR_SEC
+    let plus2Time = formingOpen + BAR_SEC * 2
+    if (
+      existingTimes.has(plus1Time) ||
+      existingTimes.has(plus2Time) ||
+      plus1Time <= lastRealTime
+    ) {
+      plus1Time = lastRealTime + BAR_SEC
+      plus2Time = lastRealTime + BAR_SEC * 2
+    }
     const markPx = livePrice ?? last.close
 
     const pushSuggestionCandle = (
@@ -367,19 +390,22 @@ export function CandleChart({ candles, suggestions, livePrice, mark }: Props) {
       let high = open
       let low = open
       // Always draw a readable body so +1/+2 are obvious on the chart
-      const body = Math.max(12, Math.min(28, Math.abs(inv - open) * 0.5 || 16))
+      const body = Math.max(
+        horizon === 2 ? 18 : 14,
+        Math.min(32, Math.abs(inv - open) * 0.55 || (horizon === 2 ? 22 : 16)),
+      )
       if (bias === 'bearish') {
         close = open - body
-        low = Math.min(close - 6, inv < open ? inv : close - 6)
-        high = open + 4
+        low = Math.min(close - 8, inv < open ? inv : close - 8)
+        high = open + 5
       } else if (bias === 'bullish') {
         close = open + body
-        high = Math.max(close + 6, inv > open ? inv : close + 6)
-        low = open - 4
+        high = Math.max(close + 8, inv > open ? inv : close + 8)
+        low = open - 5
       } else {
-        high = open + body * 0.45
-        low = open - body * 0.45
-        close = open + (horizon === 2 ? -2 : 2)
+        high = open + body * 0.5
+        low = open - body * 0.5
+        close = open + (horizon === 2 ? -3 : 3)
       }
       const style =
         horizon === 1
@@ -403,11 +429,11 @@ export function CandleChart({ candles, suggestions, livePrice, mark }: Props) {
       })
       volData.push({
         time: openTime as Time,
-        value: 0,
+        value: horizon === 2 ? Math.max(1, last.volume * 0.15) : 0,
         color:
           horizon === 1
-            ? 'rgba(110, 176, 255, 0.35)'
-            : 'rgba(155, 176, 232, 0.3)',
+            ? 'rgba(110, 176, 255, 0.4)'
+            : 'rgba(240, 165, 0, 0.45)',
       })
       map.set(openTime, {
         openTime,
@@ -425,7 +451,7 @@ export function CandleChart({ candles, suggestions, livePrice, mark }: Props) {
     if (suggestions?.plus1) {
       pushSuggestionCandle(
         1,
-        formingOpen + BAR_SEC,
+        plus1Time,
         suggestions.plus1.bias,
         suggestions.plus1.invalidation,
         suggestions.plus1.lastClose,
@@ -434,7 +460,7 @@ export function CandleChart({ candles, suggestions, livePrice, mark }: Props) {
     if (suggestions?.plus2) {
       pushSuggestionCandle(
         2,
-        formingOpen + BAR_SEC * 2,
+        plus2Time,
         suggestions.plus2.bias,
         suggestions.plus2.invalidation,
         suggestions.plus2.lastClose,
@@ -460,7 +486,7 @@ export function CandleChart({ candles, suggestions, livePrice, mark }: Props) {
     }
     if (suggestions?.plus1) {
       markers.push({
-        time: (formingOpen + BAR_SEC) as Time,
+        time: plus1Time as Time,
         position: 'aboveBar',
         color: COLORS.plus1Border,
         shape: 'circle',
@@ -469,35 +495,31 @@ export function CandleChart({ candles, suggestions, livePrice, mark }: Props) {
     }
     if (suggestions?.plus2) {
       markers.push({
-        time: (formingOpen + BAR_SEC * 2) as Time,
+        time: plus2Time as Time,
         position: 'aboveBar',
         color: COLORS.plus2Border,
-        shape: 'square',
+        shape: 'arrowUp',
         text: '+2',
       })
     }
     markersApi?.setMarkers(markers)
 
-    // Default window must include +1 and +2 suggestion candles on the right
+    // Always keep +1/+2 suggestion candles in the default window unless user panned/zoomed
+    const n = candleData.length
+    const show = Math.min(DEFAULT_VISIBLE, Math.max(n - 2, 20))
+    const applyDefaultRange = () => {
+      chart.timeScale().applyOptions({ rightOffset: 12 })
+      chart.timeScale().setVisibleLogicalRange({
+        from: Math.max(-0.5, n - show - 0.5),
+        // n already includes +1/+2 — pad past the last suggestion bar
+        to: n + 3,
+      })
+    }
     if (!initialViewDoneRef.current) {
       initialViewDoneRef.current = true
-      const n = candleData.length
-      const show = Math.min(DEFAULT_VISIBLE, n)
-      chart.timeScale().setVisibleLogicalRange({
-        from: n - show - 0.5,
-        to: n + 0.5,
-      })
-    } else if (!userInteractedRef.current && suggestions) {
-      // Keep +2 in view when user hasn't panned away
-      const range = chart.timeScale().getVisibleLogicalRange()
-      const n = candleData.length
-      if (range && range.to < n - 0.2) {
-        const width = range.to - range.from
-        chart.timeScale().setVisibleLogicalRange({
-          from: n - width,
-          to: n + 0.5,
-        })
-      }
+      applyDefaultRange()
+    } else if (!userInteractedRef.current) {
+      applyDefaultRange()
     }
   }, [candles, suggestion, suggestions, livePrice, mark, glow])
 
@@ -604,7 +626,7 @@ export function CandleChart({ candles, suggestions, livePrice, mark }: Props) {
                   {suggestions.plus1.oneLiner}
                 </div>
                 <div className="mt-1 text-[var(--tvate-muted)]">
-                  <span className="text-[#7c8db5]">+2 {suggestions.plus2.bucketLabel}</span>
+                  <span className="text-[#f0a500]">+2 {suggestions.plus2.bucketLabel}</span>
                   {' · '}
                   {suggestions.plus2.oneLiner}
                 </div>
@@ -634,7 +656,7 @@ export function CandleChart({ candles, suggestions, livePrice, mark }: Props) {
                 {' · '}
                 <span className="text-[#6eb0ff]">+1 {suggestions.plus1.bucketLabel}</span>
                 {' · '}
-                <span className="text-[#a8b8f0]">+2 {suggestions.plus2.bucketLabel}</span>
+                <span className="text-[#f0a500]">+2 {suggestions.plus2.bucketLabel}</span>
               </div>
             )}
           </div>
