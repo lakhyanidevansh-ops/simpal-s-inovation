@@ -48,12 +48,12 @@ const COLORS = {
   nextBody: 'rgba(61, 139, 253, 0.42)',
   nextBorder: '#3d8bfd',
   nextWick: '#5aa2ff',
-  plus1Body: 'rgba(61, 139, 253, 0.18)',
+  plus1Body: 'rgba(110, 176, 255, 0.35)',
   plus1Border: '#6eb0ff',
-  plus1Wick: '#6eb0ff',
-  plus2Body: 'rgba(124, 141, 181, 0.28)',
-  plus2Border: '#a8b8f0',
-  plus2Wick: '#a8b8f0',
+  plus1Wick: '#8ec4ff',
+  plus2Body: 'rgba(168, 184, 240, 0.4)',
+  plus2Border: '#c5d0ff',
+  plus2Wick: '#c5d0ff',
 }
 
 const DEFAULT_VISIBLE = 100
@@ -360,25 +360,26 @@ export function CandleChart({ candles, suggestions, livePrice, mark }: Props) {
       openTime: number,
       bias: NextCandleSuggestion['bias'],
       inv: number,
-      refClose: number,
+      _refClose: number,
     ) => {
       const open = markPx
       let close = open
       let high = open
       let low = open
-      const span = Math.max(8, Math.abs(inv - open) * 0.85)
+      // Always draw a readable body so +1/+2 are obvious on the chart
+      const body = Math.max(12, Math.min(28, Math.abs(inv - open) * 0.5 || 16))
       if (bias === 'bearish') {
-        close = Math.min(refClose, open - Math.min(span, 18))
-        low = Math.min(close, inv < open ? inv : close - 4)
-        high = Math.max(open, open + 3)
+        close = open - body
+        low = Math.min(close - 6, inv < open ? inv : close - 6)
+        high = open + 4
       } else if (bias === 'bullish') {
-        close = Math.max(refClose, open + Math.min(span, 18))
-        high = Math.max(close, inv > open ? inv : close + 4)
-        low = Math.min(open, open - 3)
+        close = open + body
+        high = Math.max(close + 6, inv > open ? inv : close + 6)
+        low = open - 4
       } else {
-        high = open + 6
-        low = open - 6
-        close = open
+        high = open + body * 0.45
+        low = open - body * 0.45
+        close = open + (horizon === 2 ? -2 : 2)
       }
       const style =
         horizon === 1

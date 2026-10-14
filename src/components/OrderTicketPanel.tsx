@@ -38,27 +38,23 @@ function HorizonCard({
         </div>
         <div className="font-mono text-[10px] text-[#5aa2ff]">{s.bucketLabel}</div>
       </div>
-      <div className="mt-1 text-lg font-bold uppercase" style={{ color: accent }}>
+      <div className="text-base font-bold uppercase" style={{ color: accent }}>
         {s.bias}
       </div>
-      <p className="mt-1 font-mono text-[11px] leading-snug text-[var(--tvate-text)]">
+      <p className="mt-0.5 font-mono text-[10px] leading-snug text-[var(--tvate-text)]">
         {s.oneLiner}
       </p>
-      <dl className="mt-2 space-y-1 text-[11px]">
+      <dl className="mt-1.5 space-y-0.5 text-[10px]">
         <div className="flex justify-between gap-2">
           <dt className="text-[var(--tvate-muted)]">Expect</dt>
           <dd className="font-mono text-right">{vs}</dd>
         </div>
         <div className="flex justify-between gap-2">
-          <dt className="text-[var(--tvate-muted)]">Target</dt>
-          <dd className="font-mono text-right">{s.targetHint}</dd>
+          <dt className="text-[var(--tvate-muted)]">Inv</dt>
+          <dd className="font-mono text-right">{s.invalidation.toFixed(2)}</dd>
         </div>
         <div className="flex justify-between gap-2">
-          <dt className="text-[var(--tvate-muted)]">Invalidation</dt>
-          <dd className="font-mono text-right">{s.invalidationNote}</dd>
-        </div>
-        <div className="flex justify-between gap-2">
-          <dt className="text-[var(--tvate-muted)]">Confidence</dt>
+          <dt className="text-[var(--tvate-muted)]">Conf</dt>
           <dd className="font-mono text-right">{s.confidence}</dd>
         </div>
       </dl>
@@ -111,20 +107,9 @@ export function OrderTicketPanel({ suggestions, lastPrice, symbol }: Props) {
         </button>
       </div>
 
-      <div className="tvate-scroll space-y-3 overflow-y-auto p-3">
+      <div className="tvate-scroll space-y-2 overflow-y-auto p-2">
         <HorizonCard s={suggestions.plus1} title="Candle +1" />
         <HorizonCard s={suggestions.plus2} title="Candle +2" />
-        <div className="rounded border border-[var(--tvate-border)] bg-[var(--tvate-panel-2)] p-2">
-          <div className="text-[10px] uppercase tracking-wide text-[var(--tvate-muted)]">
-            Structure
-          </div>
-          <p className="mt-1 text-[11px] leading-snug text-[var(--tvate-muted)]">
-            {suggestions.plus1.structure}
-          </p>
-          <p className="mt-1 text-[11px] leading-snug text-[var(--tvate-muted)]">
-            {suggestions.plus2.structure}
-          </p>
-        </div>
       </div>
 
       <div className="mt-auto border-t border-[var(--tvate-border)] p-3 text-[10px] text-[var(--tvate-muted)]">

@@ -107,7 +107,7 @@ export default function App() {
 
       {live && snapshot && suggestions && suggestion && (
         <>
-          <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px]">
+          <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px]">
             <div className="min-h-[460px] border-b border-[var(--tvate-border)] lg:border-b-0">
               <CandleChart
                 candles={snapshot.candles}
