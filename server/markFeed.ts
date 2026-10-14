@@ -361,13 +361,25 @@ async function connectTradovate(creds: TradovateCreds) {
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify(authBody),
   })
-  const authJson = (await authRes.json()) as {
+  const authRaw = await authRes.text()
+  let authJson: {
     errorText?: string
     accessToken?: string
     mdAccessToken?: string
+  } = {}
+  try {
+    authJson = JSON.parse(authRaw) as typeof authJson
+  } catch {
+    throw new Error(
+      authRaw.trim() ||
+        `Tradovate auth HTTP ${authRes.status} (non-JSON). Add CID/SEC from API Access.`,
+    )
   }
   if (!authRes.ok || authJson.errorText || !authJson.accessToken) {
-    throw new Error(authJson.errorText || `Tradovate auth HTTP ${authRes.status}`)
+    throw new Error(
+      authJson.errorText ||
+        `Tradovate auth HTTP ${authRes.status}. Need API key CID/SEC + dedicated API password.`,
+    )
   }
 
   const token = authJson.mdAccessToken || authJson.accessToken
