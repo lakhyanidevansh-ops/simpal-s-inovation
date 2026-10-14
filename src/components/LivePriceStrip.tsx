@@ -26,14 +26,20 @@ export function LivePriceStrip({
   pollMs,
   status,
 }: Props) {
-  const ageSec = Math.max(0, Math.round(now / 1000 - snapshot.sourceTime))
+  const mark = snapshot.mark
+  const ageSec = Math.max(
+    mark.ageSeconds,
+    Math.max(0, Math.round(now / 1000 - mark.sourceTime)),
+  )
   const fetchAgeSec = Math.max(0, Math.round((now - snapshot.fetchedAt) / 1000))
   const up =
-    snapshot.change == null ? null : snapshot.change > 0
-      ? true
-      : snapshot.change < 0
-        ? false
-        : null
+    snapshot.change == null
+      ? null
+      : snapshot.change > 0
+        ? true
+        : snapshot.change < 0
+          ? false
+          : null
 
   const flashClass =
     flash === 'up' ? 'price-flash-up' : flash === 'down' ? 'price-flash-down' : ''
@@ -45,13 +51,24 @@ export function LivePriceStrip({
         ? 'var(--tvate-down)'
         : 'var(--tvate-muted)'
 
+  const badge =
+    mark.freshness === 'live'
+      ? { label: 'LIVE', color: 'var(--tvate-up)' }
+      : { label: 'DELAYED', color: 'var(--tvate-warn)' }
+
   return (
     <div className="flex flex-wrap items-center gap-4 border-b border-[var(--tvate-border)] bg-[var(--tvate-panel)] px-3 py-2">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-end gap-x-4 gap-y-1">
           <div>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--tvate-muted)]">
-              Live mark · {snapshot.symbol}
+            <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--tvate-muted)]">
+              <span
+                className="rounded px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-black"
+                style={{ background: badge.color }}
+              >
+                {badge.label}
+              </span>
+              Mark · {snapshot.symbol}
               {snapshot.forming ? ' · forming 5m' : ''}
             </div>
             <div
@@ -82,10 +99,17 @@ export function LivePriceStrip({
                 )}
               </div>
             )}
-            {snapshot.previousClose != null && (
+            {mark.bid != null && mark.ask != null ? (
               <div className="text-[11px] text-[var(--tvate-muted)]">
-                vs prev {snapshot.previousClose.toFixed(2)}
+                bid {mark.bid.toFixed(2)} / ask {mark.ask.toFixed(2)}
               </div>
+            ) : (
+              snapshot.previousClose != null && (
+                <div className="text-[11px] text-[var(--tvate-muted)]">
+                  vs prev {snapshot.previousClose.toFixed(2)} · no bid/ask on
+                  this feed
+                </div>
+              )
             )}
           </div>
 
@@ -101,7 +125,8 @@ export function LivePriceStrip({
               <span
                 className="font-mono"
                 style={{
-                  color: ageSec > 60 ? 'var(--tvate-warn)' : 'var(--tvate-text)',
+                  color:
+                    ageSec > 15 ? 'var(--tvate-warn)' : 'var(--tvate-up)',
                 }}
               >
                 {ageSec}s
@@ -110,9 +135,7 @@ export function LivePriceStrip({
               poll {pollMs / 1000}s · last fetch {fetchAgeSec}s ago ·{' '}
               <span className="capitalize">{status}</span>
             </div>
-            <div className="text-[10px]">
-              Yahoo CME — often delayed; bid/ask not on this feed
-            </div>
+            <div className="text-[10px]">{mark.source}</div>
           </div>
         </div>
       </div>

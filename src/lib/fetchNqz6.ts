@@ -1,4 +1,4 @@
-import type { Candle, MarketSnapshot } from './types'
+import type { Candle, MarkPrint, MarketSnapshot } from './types'
 
 const SYMBOL = 'NQZ26.CME'
 const BAR_SEC = 300
@@ -20,10 +20,6 @@ type YahooMeta = {
   regularMarketTime?: number
   previousClose?: number
   chartPreviousClose?: number
-  regularMarketChangePercent?: number
-  fulldayPrice?: number
-  fulldayChange?: number
-  fulldayChangePercent?: number
 }
 
 type YahooChartResponse = {
@@ -35,6 +31,10 @@ type YahooChartResponse = {
     }>
     error?: { description?: string } | null
   }
+}
+
+function alignBar(ts: number): number {
+  return Math.floor(ts / BAR_SEC) * BAR_SEC
 }
 
 function cleanCandles(timestamps: number[], quote: YahooQuote): Candle[] {
@@ -61,7 +61,6 @@ function cleanCandles(timestamps: number[], quote: YahooQuote): Candle[] {
     })
   }
 
-  // Drop Yahoo's duplicate regularMarketTime tick when it isn't a new 5m bucket
   if (out.length >= 2) {
     const last = out[out.length - 1]
     const prev = out[out.length - 2]
@@ -81,10 +80,6 @@ function cleanCandles(timestamps: number[], quote: YahooQuote): Candle[] {
   return out
 }
 
-function alignBar(ts: number): number {
-  return Math.floor(ts / BAR_SEC) * BAR_SEC
-}
-
 function patchFormingCandle(candles: Candle[], livePrice: number): Candle[] {
   if (!candles.length) return candles
   const next = candles.map((c) => ({ ...c }))
@@ -98,8 +93,7 @@ function patchFormingCandle(candles: Candle[], livePrice: number): Candle[] {
     last.high = Math.max(last.high, livePrice, last.open)
     last.low = Math.min(last.low, livePrice, last.open)
     last.forming = true
-  } else if (livePrice > 0 && expectedBar > last.time) {
-    // Start a synthetic forming bar when Yahoo hasn't opened the bucket yet
+  } else if (expectedBar > last.time) {
     next.push({
       time: expectedBar,
       open: livePrice,
@@ -115,7 +109,6 @@ function patchFormingCandle(candles: Candle[], livePrice: number): Candle[] {
     last.low = Math.min(last.low, livePrice)
     last.forming = true
   }
-
   return next
 }
 
@@ -148,82 +141,47 @@ async function fetchChart(
   }
 }
 
+async function fetchMark(signal?: AbortSignal): Promise<MarkPrint> {
+  const res = await fetch('/api/mark', {
+    signal,
+    headers: { Accept: 'application/json' },
+    cache: 'no-store',
+  })
+  if (!res.ok) throw new Error(`Mark API HTTP ${res.status}`)
+  return (await res.json()) as MarkPrint
+}
+
 export async function fetchNqz6Snapshot(
   signal?: AbortSignal,
 ): Promise<MarketSnapshot> {
-  // 5m for structure; 1m in parallel for fresher mark when meta ties
-  const [five, one] = await Promise.all([
+  // Primary mark from server (Tradovate RT if configured, else delayed Yahoo)
+  // Chart OHLC still from Yahoo 5m (structure only) — never pretend chart is RT.
+  const [mark, five] = await Promise.all([
+    fetchMark(signal),
     fetchChart('5m', '5d', signal),
-    fetchChart('1m', '1d', signal).catch(() => null),
   ])
 
   if (!five.candles.length) throw new Error('No valid 5m candles returned')
 
-  const metaA = five.meta
-  const metaB = one?.meta
-  const pickMeta =
-    metaB &&
-    (metaB.regularMarketTime ?? 0) >= (metaA.regularMarketTime ?? 0)
-      ? metaB
-      : metaA
-
-  const livePrice =
-    pickMeta.regularMarketPrice ??
-    pickMeta.fulldayPrice ??
-    five.candles[five.candles.length - 1].close
-
-  const sourceTime =
-    pickMeta.regularMarketTime ??
-    five.candles[five.candles.length - 1].time ??
-    Math.floor(Date.now() / 1000)
-
-  const previousClose =
-    pickMeta.previousClose ?? pickMeta.chartPreviousClose ?? null
-
-  let change: number | null =
-    pickMeta.fulldayChange != null
-      ? pickMeta.fulldayChange
-      : previousClose != null
-        ? livePrice - previousClose
-        : null
-
-  let changePercent: number | null =
-    pickMeta.fulldayChangePercent ??
-    pickMeta.regularMarketChangePercent ??
-    null
-  if (changePercent == null && change != null && previousClose) {
-    changePercent = (change / previousClose) * 100
-  }
-
-  // Prefer 1m last print to nudge forming 5m OHLC when available
-  let patched = patchFormingCandle(five.candles, livePrice)
-  if (one?.candles.length) {
-    const m1 = one.candles[one.candles.length - 1]
-    const last5 = patched[patched.length - 1]
-    if (m1.time >= last5.time) {
-      last5.close = livePrice
-      last5.high = Math.max(last5.high, m1.high, livePrice)
-      last5.low = Math.min(last5.low, m1.low, livePrice)
-      last5.forming = true
-    }
-  }
-
-  const forming = Boolean(patched[patched.length - 1]?.forming)
+  const livePrice = mark.price
+  const patched = patchFormingCandle(five.candles, livePrice)
+  const meta = five.meta
 
   return {
-    symbol: pickMeta.symbol ?? metaA.symbol ?? SYMBOL,
-    shortName: pickMeta.shortName ?? metaA.shortName ?? 'Nasdaq 100 Dec 26',
-    exchange: pickMeta.exchangeName ?? metaA.exchangeName ?? 'CME',
-    timezone: pickMeta.timezone ?? metaA.timezone ?? 'America/New_York',
+    symbol: mark.symbol || meta.symbol || SYMBOL,
+    shortName: meta.shortName ?? 'Nasdaq 100 Dec 26',
+    exchange: meta.exchangeName ?? 'CME',
+    timezone: meta.timezone ?? 'America/New_York',
     livePrice,
     regularMarketPrice: livePrice,
-    previousClose,
-    change,
-    changePercent,
-    sourceTime,
+    previousClose: mark.previousClose,
+    change: mark.change,
+    changePercent: mark.changePercent,
+    sourceTime: mark.sourceTime,
     candles: patched,
     fetchedAt: Date.now(),
-    source: 'Yahoo Finance 5m+1m (proxied)',
-    forming,
+    source: mark.source,
+    forming: Boolean(patched[patched.length - 1]?.forming),
+    mark,
   }
 }

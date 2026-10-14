@@ -298,7 +298,7 @@ export function CandleChart({ candles, suggestion, livePrice }: Props) {
           }}
         >
           <div className="font-semibold tracking-wide">
-            {biasColors(suggestion.bias).label} · LIVE SUGGESTION
+            {biasColors(suggestion.bias).label} · NEXT-CANDLE CALL
           </div>
           <div className="mt-0.5 font-mono text-[10px] leading-snug text-[var(--tvate-text)]">
             {suggestion.oneLiner}

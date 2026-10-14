@@ -1,4 +1,5 @@
 import { CandleChart } from './components/CandleChart'
+import { FreshnessBanner } from './components/FreshnessBanner'
 import { KeyLevels } from './components/KeyLevels'
 import { LivePriceStrip } from './components/LivePriceStrip'
 import { OrderTicketPanel } from './components/OrderTicketPanel'
@@ -31,7 +32,8 @@ export default function App() {
               Tradovate-style · NQZ6
             </div>
             <div className="text-[10px] text-[var(--tvate-muted)]">
-              Gujju Gaming / Trading Cycle · clone chrome (not TradingView)
+              Gujju Gaming / Trading Cycle · UI clone only (not live Tradovate
+              data unless keys configured)
             </div>
           </div>
         </div>
@@ -63,6 +65,8 @@ export default function App() {
         </div>
       </header>
 
+      {snapshot && <FreshnessBanner mark={snapshot.mark} />}
+
       {snapshot && (
         <LivePriceStrip
           snapshot={snapshot}
@@ -83,13 +87,13 @@ export default function App() {
         <span>Time axis</span>
         <span className="text-[var(--tvate-warn)]">NEXT bar highlight ON</span>
         <span className="ml-auto font-mono text-[var(--tvate-text)]">
-          Fast poll · live mark drives forming bar + suggestion
+          Mark from /api/mark · 5m OHLC structure may still be delayed Yahoo
         </span>
       </div>
 
       {status === 'loading' && !snapshot && (
         <div className="flex flex-1 items-center justify-center text-[var(--tvate-muted)]">
-          Loading NQZ6 live mark + 5m from Yahoo…
+          Loading mark + 5m structure…
         </div>
       )}
 
@@ -126,11 +130,13 @@ export default function App() {
           </div>
 
           <footer className="border-t border-[var(--tvate-border)] bg-[var(--tvate-panel)] px-3 py-2 text-[10px] text-[var(--tvate-muted)]">
-            Source: {snapshot.source}. Live mark from Yahoo{' '}
-            <code className="text-[var(--tvate-text)]">regularMarketPrice</code>{' '}
-            @ source time; poll every {pollMs / 1000}s. CME via Yahoo is often
-            delayed vs Tradovate/CME direct — age shown above. Bid/ask not
-            available on this free path. Tradovate-style chrome only. Not advice.
+            Mark source: {snapshot.mark.source}. Freshness:{' '}
+            <strong className="text-[var(--tvate-text)]">
+              {snapshot.mark.freshness.toUpperCase()}
+            </strong>{' '}
+            (LIVE only if age ≤ 15s from Tradovate MD). Yahoo-only mode is
+            exchange-delayed (~10m) — not Tradovate accuracy. Set env vars in{' '}
+            <code>.env.example</code>. Not advice.
             {error ? ` · refresh warn: ${error}` : ''}
           </footer>
         </>

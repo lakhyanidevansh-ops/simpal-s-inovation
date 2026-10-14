@@ -1,26 +1,46 @@
-# NQZ6 Live (Tradovate-style)
+# NQZ6 Live (Tradovate-style UI)
 
-Near-live **Nasdaq-100 Dec futures (NQZ6 / NQZ26.CME)** on the **5-minute** chart for Gujju Gaming / Trading Cycle.
+Near-live **Nasdaq-100 Dec futures (NQZ6)** monitor for Gujju Gaming / Trading Cycle.
 
-The UI is a **Tradovate-style** dark trading desk (chart + order-ticket-adjacent panel) — **not** TradingView branding/layout. It polls Yahoo Finance every **3 seconds** (5m + 1m), shows a **large live mark** with change/% and flash on ticks, stamps **source as-of / data age**, and highlights the **forming candle + projected next 5m zone** tied to that same live print.
+## Accuracy (read this)
 
-## Run locally
+| Mode | When | Freshness label |
+|------|------|-----------------|
+| **DELAYED** | Default — Yahoo CME print | Age usually ~**10 minutes**. Banner shows **DELAYED**. |
+| **LIVE** | Tradovate MD credentials + CME entitlement | Age ≤ **15s**. Banner shows **LIVE**. |
+
+**True real-time is not available without user keys.** Free Yahoo / public CME web quotes are exchange-delayed. This app will **not invent** “live” prices.
+
+## Run
 
 ```bash
+cp .env.example .env   # optional: fill Tradovate vars for LIVE
 npm install
 npm run dev
 ```
 
-Open **http://127.0.0.1:4317** (port fixed in `vite.config.ts`).
+Open **http://127.0.0.1:4317**
 
-## What you see
+### Tradovate env vars (for LIVE)
 
-- Dark Tradovate-like chart chrome (grid, crosshair, price/time axes, green/red candles)
-- Right-side order-ticket panel with bias / expect-close / invalidation
-- `FORMING` + `NEXT` markers that refresh on each poll
+```
+TRADOVATE_NAME=
+TRADOVATE_PASSWORD=
+TRADOVATE_APP_ID=
+TRADOVATE_APP_VERSION=1.0
+TRADOVATE_CID=
+TRADOVATE_SEC=
+TRADOVATE_ENV=demo          # or live
+TRADOVATE_SYMBOL=NQZ6
+```
 
-## Notes
+Also need Tradovate **API Access** add-on and a **CME market-data** entitlement. Endpoints used: `auth/accesstokenrequest` + `wss://md-demo.tradovateapi.com` (or live MD host).
 
-- Yahoo CME quotes are often delayed vs the live book.
-- Browser calls go to `/api/yahoo/...` (Vite proxy).
-- Tactical 5m aid only — not investment advice.
+## What polls
+
+- `/api/mark` every **3s** — Tradovate RT if configured & fresh, else delayed Yahoo (honestly labeled)
+- Yahoo **5m** candles for chart structure (still delayed when Yahoo-backed)
+
+## UI
+
+Tradovate-**style** dark desk (not TradingView branding). Large mark, change/%, source as-of, data age, DELAYED/LIVE banner, NEXT-candle highlight.
