@@ -63,7 +63,7 @@ function parseRawCandles(timestamps: number[], quote: YahooQuote): Candle[] {
   return out
 }
 
-async function fetchChart(
+async function fetchYahooChart(
   interval: string,
   range: string,
   signal?: AbortSignal,
@@ -93,7 +93,43 @@ async function fetchChart(
   }
 }
 
-async function fetchMark(signal?: AbortSignal): Promise<MarkPrint> {
+/** Prefer Tradovate 5m bars when the MD feed has them; else delayed Yahoo structure. */
+async function fetchCandles(
+  signal?: AbortSignal,
+): Promise<{ meta: YahooMeta; candles: Candle[]; structureSource: string }> {
+  try {
+    const res = await fetch('/api/candles', {
+      signal,
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (res.ok) {
+      const data = (await res.json()) as {
+        source?: string
+        candles?: Candle[]
+      }
+      if (data.candles?.length) {
+        return {
+          meta: {
+            symbol: 'NQZ6',
+            shortName: 'Nasdaq 100 Dec (Tradovate)',
+            exchangeName: 'CME via Tradovate',
+            exchangeTimezoneName: 'America/Chicago',
+          },
+          candles: normalizeFiveMinuteCandles(data.candles),
+          structureSource: 'tradovate',
+        }
+      }
+    }
+  } catch {
+    // fall through to Yahoo structure
+  }
+
+  const five = await fetchYahooChart('5m', '5d', signal)
+  return { ...five, structureSource: 'yahoo-delayed' }
+}
+
+export async function fetchMark(signal?: AbortSignal): Promise<MarkPrint> {
   const res = await fetch('/api/mark', {
     signal,
     headers: { Accept: 'application/json' },
@@ -106,18 +142,16 @@ async function fetchMark(signal?: AbortSignal): Promise<MarkPrint> {
 export async function fetchNqz6Snapshot(
   signal?: AbortSignal,
 ): Promise<MarketSnapshot> {
-  const [mark, five] = await Promise.all([
+  const [mark, structure] = await Promise.all([
     fetchMark(signal),
-    fetchChart('5m', '5d', signal),
+    fetchCandles(signal),
   ])
 
-  if (!five.candles.length) throw new Error('No valid 5m candles returned')
+  if (!structure.candles.length) throw new Error('No valid 5m candles returned')
 
-  const patched = patchFormingFromMark(five.candles, mark)
-  const meta = five.meta
-  // Prefer CME exchange timezone for labels; Yahoo often reports EDT
-  const exchangeTz =
-    meta.exchangeTimezoneName || 'America/Chicago'
+  const patched = patchFormingFromMark(structure.candles, mark)
+  const meta = structure.meta
+  const exchangeTz = meta.exchangeTimezoneName || 'America/Chicago'
 
   return {
     symbol: mark.symbol || meta.symbol || SYMBOL,

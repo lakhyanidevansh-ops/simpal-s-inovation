@@ -6,6 +6,8 @@ type Props = {
   flash: 'up' | 'down' | null
   pollMs: number
   status: string
+  tickGapUs: number | null
+  feedMode: string | null
 }
 
 function fmtEt(msOrSec: number, isSec = false): string {
@@ -19,19 +21,28 @@ function fmtEt(msOrSec: number, isSec = false): string {
   }).format(new Date(ms))
 }
 
+function fmtGap(us: number | null): string {
+  if (us == null) return '—'
+  if (us < 1000) return `${us} µs`
+  if (us < 1_000_000) return `${(us / 1000).toFixed(1)} ms`
+  return `${(us / 1_000_000).toFixed(2)} s`
+}
+
 export function LivePriceStrip({
   snapshot,
   now,
   flash,
   pollMs,
   status,
+  tickGapUs,
+  feedMode,
 }: Props) {
   const mark = snapshot.mark
   const ageSec = Math.max(
     mark.ageSeconds,
-    Math.max(0, Math.round(now / 1000 - mark.sourceTime)),
+    Math.max(0, (now / 1000 - mark.sourceTime)),
   )
-  const fetchAgeSec = Math.max(0, Math.round((now - snapshot.fetchedAt) / 1000))
+  const fetchAgeMs = Math.max(0, now - snapshot.fetchedAt)
   const up =
     snapshot.change == null
       ? null
@@ -51,10 +62,10 @@ export function LivePriceStrip({
         ? 'var(--tvate-down)'
         : 'var(--tvate-muted)'
 
-  const badge =
-    mark.freshness === 'live'
-      ? { label: 'LIVE', color: 'var(--tvate-up)' }
-      : { label: 'DELAYED', color: 'var(--tvate-warn)' }
+  const isTvTick = feedMode === 'tradovate-tick' || mark.freshness === 'live'
+  const badge = isTvTick
+    ? { label: 'LIVE TICK', color: 'var(--tvate-up)' }
+    : { label: 'DELAYED', color: 'var(--tvate-warn)' }
 
   return (
     <div className="flex flex-wrap items-center gap-4 border-b border-[var(--tvate-border)] bg-[var(--tvate-panel)] px-3 py-2">
@@ -106,8 +117,7 @@ export function LivePriceStrip({
             ) : (
               snapshot.previousClose != null && (
                 <div className="text-[11px] text-[var(--tvate-muted)]">
-                  vs prev {snapshot.previousClose.toFixed(2)} · no bid/ask on
-                  this feed
+                  vs prev {snapshot.previousClose.toFixed(2)} · no bid/ask yet
                 </div>
               )
             )}
@@ -121,21 +131,34 @@ export function LivePriceStrip({
               </span>
             </div>
             <div>
-              Data age{' '}
+              Age{' '}
               <span
                 className="font-mono"
                 style={{
                   color:
-                    ageSec > 15 ? 'var(--tvate-warn)' : 'var(--tvate-up)',
+                    ageSec > 2 ? 'var(--tvate-warn)' : 'var(--tvate-up)',
                 }}
               >
-                {ageSec}s
+                {(ageSec * 1000).toFixed(0)} ms
               </span>
               {' · '}
-              poll {pollMs / 1000}s · last fetch {fetchAgeSec}s ago ·{' '}
-              <span className="capitalize">{status}</span>
+              tick gap{' '}
+              <span className="font-mono text-[var(--tvate-text)]">
+                {fmtGap(tickGapUs)}
+              </span>
+              {' · '}
+              last paint {fetchAgeMs} ms ago
             </div>
-            <div className="text-[10px]">{mark.source}</div>
+            <div className="text-[10px]">
+              {mark.source}
+              {!isTvTick && (
+                <span>
+                  {' '}
+                  · structure poll {pollMs / 1000}s ·{' '}
+                  <span className="capitalize">{status}</span>
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>

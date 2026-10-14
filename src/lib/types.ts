@@ -57,6 +57,8 @@ export type MarkPrint = {
   sourceTime: number
   fetchedAt: number
   ageSeconds: number
+  /** Gap between last two Tradovate ticks in microseconds (when streaming). */
+  tickGapUs?: number | null
   freshness: Freshness
   source: string
   previousClose: number | null
@@ -66,6 +68,8 @@ export type MarkPrint = {
   ask: number | null
   note: string
   tradovateConfigured?: boolean
+  tradovateStatus?: string
+  feedMode?: 'tradovate-tick' | 'yahoo-delayed'
 }
 
 export type MarketSnapshot = {

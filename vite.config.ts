@@ -3,9 +3,16 @@ import react from '@vitejs/plugin-react'
 import { config as loadEnv } from 'dotenv'
 import type { Plugin } from 'vite'
 import { defineConfig } from 'vite'
-import { getBestMark, tradovateStatus } from './server/markFeed.ts'
+import {
+  ensureTradovateBoot,
+  getBestMark,
+  getTradovateCandles,
+  onTick,
+  tradovateStatus,
+} from './server/markFeed.ts'
 
 loadEnv()
+ensureTradovateBoot()
 
 function markApiPlugin(): Plugin {
   return {
@@ -13,6 +20,40 @@ function markApiPlugin(): Plugin {
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
         if (!req.url) return next()
+
+        // Server-Sent Events — push every Tradovate tick to the browser
+        if (req.url.startsWith('/api/ticks')) {
+          res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache, no-transform',
+            Connection: 'keep-alive',
+            'X-Accel-Buffering': 'no',
+          })
+          res.write(`: tradovate-tick-stream\n\n`)
+
+          // Snapshot immediately
+          void getBestMark().then((mark) => {
+            res.write(`event: mark\ndata: ${JSON.stringify(mark)}\n\n`)
+          })
+
+          const unsub = onTick((mark) => {
+            res.write(`event: mark\ndata: ${JSON.stringify(mark)}\n\n`)
+          })
+
+          // Keepalive + status pulse (~250ms) so UI can show feed health
+          // even between quiet ticks
+          const pulse = setInterval(() => {
+            const st = tradovateStatus()
+            res.write(`event: status\ndata: ${JSON.stringify(st)}\n\n`)
+          }, 250)
+
+          req.on('close', () => {
+            clearInterval(pulse)
+            unsub()
+          })
+          return
+        }
+
         if (req.url.startsWith('/api/mark')) {
           try {
             const mark = await getBestMark()
@@ -30,6 +71,35 @@ function markApiPlugin(): Plugin {
           }
           return
         }
+
+        if (req.url.startsWith('/api/candles')) {
+          try {
+            const tv = getTradovateCandles()
+            if (tv?.length) {
+              res.setHeader('Content-Type', 'application/json')
+              res.setHeader('Cache-Control', 'no-store')
+              res.end(
+                JSON.stringify({
+                  source: 'tradovate',
+                  candles: tv,
+                }),
+              )
+              return
+            }
+            res.statusCode = 204
+            res.end()
+          } catch (err) {
+            res.statusCode = 502
+            res.setHeader('Content-Type', 'application/json')
+            res.end(
+              JSON.stringify({
+                error: err instanceof Error ? err.message : 'candles failed',
+              }),
+            )
+          }
+          return
+        }
+
         if (req.url.startsWith('/api/tradovate-status')) {
           res.setHeader('Content-Type', 'application/json')
           res.setHeader('Cache-Control', 'no-store')

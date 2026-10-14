@@ -4,6 +4,7 @@ import { KeyLevels } from './components/KeyLevels'
 import { LivePriceStrip } from './components/LivePriceStrip'
 import { OrderTicketPanel } from './components/OrderTicketPanel'
 import { RecentCandles } from './components/RecentCandles'
+import { TradovateGate } from './components/TradovateGate'
 import { useLiveNqz6 } from './hooks/useLiveNqz6'
 
 export default function App() {
@@ -17,9 +18,14 @@ export default function App() {
     pollMs,
     now,
     priceFlash,
+    tickGapUs,
+    feedMode,
+    tradovateConfigured,
+    tradovateStatus,
   } = useLiveNqz6()
 
   const live = Boolean(snapshot && suggestions)
+  const isTick = feedMode === 'tradovate-tick'
 
   return (
     <div className="flex h-full min-h-screen flex-col bg-[var(--tvate-bg)] text-[var(--tvate-text)]">
@@ -30,41 +36,48 @@ export default function App() {
           </div>
           <div>
             <div className="text-[13px] font-semibold leading-tight">
-              Tradovate-style · NQZ6
+              Tradovate MD · NQZ6
             </div>
             <div className="text-[10px] text-[var(--tvate-muted)]">
-              Gujju Gaming / Trading Cycle · UI clone only (not live Tradovate
-              data unless keys configured)
+              Gujju Gaming / Trading Cycle · prices from Tradovate when keys are
+              set (never TradingView)
             </div>
           </div>
         </div>
 
         <div className="ml-auto flex flex-wrap items-center gap-2 text-[11px]">
           <span className="rounded border border-[var(--tvate-border)] bg-[var(--tvate-panel-2)] px-2 py-1 font-mono">
-            NQZ26.CME · 5m
+            NQZ6 · tick SSE
           </span>
           <span className="inline-flex items-center gap-1.5 rounded border border-[var(--tvate-border)] bg-[var(--tvate-panel-2)] px-2 py-1">
             <span
               className="inline-block h-2 w-2 rounded-full"
               style={{
-                background:
-                  status === 'live'
-                    ? 'var(--tvate-up)'
-                    : status === 'loading'
-                      ? 'var(--tvate-warn)'
-                      : 'var(--tvate-down)',
+                background: isTick
+                  ? 'var(--tvate-up)'
+                  : status === 'loading'
+                    ? 'var(--tvate-warn)'
+                    : 'var(--tvate-down)',
               }}
             />
-            <span className="capitalize">{status}</span>
+            <span>{isTick ? 'tick-stream' : status}</span>
             <span className="text-[var(--tvate-muted)]">
-              · poll {pollMs / 1000}s
+              {isTick
+                ? ` · gap ${tickGapUs != null ? `${tickGapUs}µs` : '—'}`
+                : ` · structure ${pollMs / 1000}s`}
               {lastSuccessAt
-                ? ` · ok ${Math.max(0, Math.round((now - lastSuccessAt) / 1000))}s ago`
+                ? ` · paint ${Math.max(0, Math.round(now - lastSuccessAt))}ms`
                 : ''}
             </span>
           </span>
         </div>
       </header>
+
+      <TradovateGate
+        configured={tradovateConfigured}
+        status={tradovateStatus}
+        feedMode={feedMode ?? null}
+      />
 
       {snapshot && <FreshnessBanner mark={snapshot.mark} />}
 
@@ -75,6 +88,8 @@ export default function App() {
           flash={priceFlash}
           pollMs={pollMs}
           status={status}
+          tickGapUs={tickGapUs}
+          feedMode={feedMode ?? null}
         />
       )}
 
@@ -84,17 +99,17 @@ export default function App() {
         </span>
         <span>Crosshair</span>
         <span>Grid</span>
-        <span>Price axis</span>
-        <span>Time axis</span>
-        <span className="text-[var(--tvate-warn)]">NEXT bar highlight ON</span>
+        <span className="text-[var(--tvate-warn)]">NEXT +1/+2 ON</span>
         <span className="ml-auto font-mono text-[var(--tvate-text)]">
-          Mark from /api/mark · 5m OHLC structure may still be delayed Yahoo
+          {isTick
+            ? 'Mark: Tradovate MD tick stream · 5m bars: Tradovate when subscribed'
+            : 'Mark/structure fallback: delayed Yahoo (not TradingView) until Tradovate keys'}
         </span>
       </div>
 
       {status === 'loading' && !snapshot && (
         <div className="flex flex-1 items-center justify-center text-[var(--tvate-muted)]">
-          Loading mark + 5m structure…
+          Connecting mark stream + 5m structure…
         </div>
       )}
 
@@ -132,14 +147,14 @@ export default function App() {
           </div>
 
           <footer className="border-t border-[var(--tvate-border)] bg-[var(--tvate-panel)] px-3 py-2 text-[10px] text-[var(--tvate-muted)]">
-            Mark source: {snapshot.mark.source}. Freshness:{' '}
+            Feed: {snapshot.mark.source}. Mode:{' '}
             <strong className="text-[var(--tvate-text)]">
-              {snapshot.mark.freshness.toUpperCase()}
-            </strong>{' '}
-            (LIVE only if age ≤ 15s from Tradovate MD). Yahoo-only mode is
-            exchange-delayed (~10m) — not Tradovate accuracy. Set env vars in{' '}
-            <code>.env.example</code>. Not advice.
-            {error ? ` · refresh warn: ${error}` : ''}
+              {snapshot.mark.feedMode ?? snapshot.mark.freshness}
+            </strong>
+            . True tick updates need Tradovate API + CME MD entitlement. Browser
+            paints every MD tick (exchange ticks are not literal 1µs clocks). Not
+            advice.
+            {error ? ` · ${error}` : ''}
           </footer>
         </>
       )}

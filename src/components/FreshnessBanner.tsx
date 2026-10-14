@@ -5,16 +5,23 @@ type Props = {
 }
 
 export function FreshnessBanner({ mark }: Props) {
-  const isLive = mark.freshness === 'live'
-  const isDelayed =
-    mark.freshness === 'delayed' || mark.freshness === 'stale'
+  const isLive =
+    mark.freshness === 'live' || mark.feedMode === 'tradovate-tick'
 
   if (isLive) {
     return (
       <div className="border-b border-emerald-800 bg-emerald-950 px-3 py-2 text-[12px] text-emerald-200">
-        <strong className="tracking-wide text-emerald-300">LIVE</strong>
+        <strong className="tracking-wide text-emerald-300">LIVE · TRADOVATE</strong>
         {' · '}
-        Real-time Tradovate mark · age {mark.ageSeconds}s · {mark.source}
+        age {(mark.ageSeconds * 1000).toFixed(0)}ms
+        {mark.tickGapUs != null && (
+          <span className="font-mono">
+            {' '}
+            · last tick gap {mark.tickGapUs}µs
+          </span>
+        )}
+        {' · '}
+        {mark.source}
         {mark.bid != null && mark.ask != null && (
           <span className="font-mono">
             {' '}
@@ -25,11 +32,11 @@ export function FreshnessBanner({ mark }: Props) {
     )
   }
 
-  if (isDelayed) {
+  if (mark.freshness === 'delayed' || mark.freshness === 'stale') {
     return (
       <div className="border-b border-amber-800 bg-[#3a2208] px-3 py-2 text-[12px] text-amber-100">
         <strong className="tracking-wide text-amber-300">
-          DELAYED — NOT REAL-TIME
+          DELAYED — NOT TRADOVATE REAL-TIME
         </strong>
         {' · '}
         Data age <span className="font-mono">{mark.ageSeconds}s</span> ·{' '}
@@ -37,9 +44,8 @@ export function FreshnessBanner({ mark }: Props) {
         <div className="mt-0.5 text-[11px] text-amber-200/90">{mark.note}</div>
         {!mark.tradovateConfigured && (
           <div className="mt-0.5 text-[11px] text-amber-200/80">
-            Add Tradovate env credentials (see <code>.env.example</code>) for
-            LIVE marks. Free Yahoo/CME web prints are ~10 minutes delayed by
-            design.
+            Not TradingView. Add Tradovate <code>.env</code> credentials for a
+            tick stream from the Tradovate platform.
           </div>
         )}
       </div>
