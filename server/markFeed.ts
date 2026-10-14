@@ -646,7 +646,14 @@ export function tradovateStatus() {
       'TRADOVATE_ENV',
       'TRADOVATE_SYMBOL',
     ],
-    note: 'True Tradovate ticks require API Access + CME MD entitlement. Updates push on every MD tick (not inventable microseconds without the feed).',
+    missing: {
+      name: !process.env.TRADOVATE_NAME?.trim(),
+      password: !process.env.TRADOVATE_PASSWORD?.trim(),
+      cid: !process.env.TRADOVATE_CID?.trim(),
+      sec: !process.env.TRADOVATE_SEC?.trim(),
+    },
+    note:
+      'Tradovate ticks need API Access: generate an API key (cid + sec) and use its dedicated API password (not only the Trader login). CME MD entitlement required for quotes.',
   }
 }
 

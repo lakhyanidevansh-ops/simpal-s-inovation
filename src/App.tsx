@@ -22,6 +22,8 @@ export default function App() {
     feedMode,
     tradovateConfigured,
     tradovateStatus,
+    tradovateError,
+    missingCidSec,
   } = useLiveNqz6()
 
   const live = Boolean(snapshot && suggestions)
@@ -77,6 +79,8 @@ export default function App() {
         configured={tradovateConfigured}
         status={tradovateStatus}
         feedMode={feedMode ?? null}
+        authError={tradovateError}
+        missingCidSec={missingCidSec}
       />
 
       {snapshot && <FreshnessBanner mark={snapshot.mark} />}

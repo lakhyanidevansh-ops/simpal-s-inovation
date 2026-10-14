@@ -23,6 +23,8 @@ export type LiveState = {
   feedMode: MarkPrint['feedMode'] | null
   tradovateConfigured: boolean
   tradovateStatus: string | null
+  tradovateError: string | null
+  missingCidSec: boolean
 }
 
 export function useLiveNqz6(): LiveState {
@@ -39,6 +41,8 @@ export function useLiveNqz6(): LiveState {
   const [feedMode, setFeedMode] = useState<MarkPrint['feedMode'] | null>(null)
   const [tradovateConfigured, setTradovateConfigured] = useState(false)
   const [tradovateStatus, setTradovateStatus] = useState<string | null>(null)
+  const [tradovateError, setTradovateError] = useState<string | null>(null)
+  const [missingCidSec, setMissingCidSec] = useState(false)
 
   const inFlight = useRef(false)
   const lastPriceRef = useRef<number | null>(null)
@@ -110,10 +114,17 @@ export function useLiveNqz6(): LiveState {
       try {
         const st = JSON.parse((ev as MessageEvent).data) as {
           configured?: boolean
-          cache?: { status?: string; tickGapUs?: number | null }
+          missing?: { cid?: boolean; sec?: boolean }
+          cache?: {
+            status?: string
+            tickGapUs?: number | null
+            error?: string | null
+          }
         }
         setTradovateConfigured(Boolean(st.configured))
+        setMissingCidSec(Boolean(st.missing?.cid || st.missing?.sec))
         if (st.cache?.status) setTradovateStatus(st.cache.status)
+        if (st.cache?.error != null) setTradovateError(st.cache.error)
         if (st.cache?.tickGapUs != null) setTickGapUs(st.cache.tickGapUs)
       } catch {
         /* ignore */
@@ -205,5 +216,7 @@ export function useLiveNqz6(): LiveState {
     feedMode,
     tradovateConfigured,
     tradovateStatus,
+    tradovateError,
+    missingCidSec,
   }
 }
