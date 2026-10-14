@@ -48,6 +48,12 @@ const COLORS = {
   nextBody: 'rgba(61, 139, 253, 0.42)',
   nextBorder: '#3d8bfd',
   nextWick: '#5aa2ff',
+  plus1Body: 'rgba(61, 139, 253, 0.18)',
+  plus1Border: '#6eb0ff',
+  plus1Wick: '#6eb0ff',
+  plus2Body: 'rgba(124, 141, 181, 0.28)',
+  plus2Border: '#a8b8f0',
+  plus2Wick: '#a8b8f0',
 }
 
 const DEFAULT_VISIBLE = 100
@@ -295,11 +301,11 @@ export function CandleChart({ candles, suggestions, livePrice, mark }: Props) {
     const volData: HistogramData<Time>[] = []
     const map = new Map<number, HoverInfo>()
 
-    // Tradovate-style: exactly one forming candle = current open 5m bucket.
-    // No projected "ghost NEXT" candle — suggestion stays a blue overlay/HUD only.
+    // Real history + Tradovate-style forming bar (blue).
     for (let i = 0; i < slice.length; i++) {
       const c = slice[i]
-      const isForming = Boolean(c.forming) || (i === slice.length - 1 && markInLast)
+      const isForming =
+        Boolean(c.forming) || (i === slice.length - 1 && markInLast)
       let close = c.close
       let high = c.high
       let low = c.low
@@ -318,7 +324,6 @@ export function CandleChart({ candles, suggestions, livePrice, mark }: Props) {
         close,
       }
       if (isForming) {
-        // Blue suggestion treatment on the real forming bar only
         point.color = glow.body
         point.borderColor = glow.border
         point.wickColor = glow.wick
@@ -345,6 +350,96 @@ export function CandleChart({ candles, suggestions, livePrice, mark }: Props) {
       })
     }
 
+    // Visible suggestion candles for +1 and +2 (labeled, hollow/faint — not real prints)
+    const formingOpen =
+      (slice.find((c) => c.forming) ?? last).time
+    const markPx = livePrice ?? last.close
+
+    const pushSuggestionCandle = (
+      horizon: 1 | 2,
+      openTime: number,
+      bias: NextCandleSuggestion['bias'],
+      inv: number,
+      refClose: number,
+    ) => {
+      const open = markPx
+      let close = open
+      let high = open
+      let low = open
+      const span = Math.max(8, Math.abs(inv - open) * 0.85)
+      if (bias === 'bearish') {
+        close = Math.min(refClose, open - Math.min(span, 18))
+        low = Math.min(close, inv < open ? inv : close - 4)
+        high = Math.max(open, open + 3)
+      } else if (bias === 'bullish') {
+        close = Math.max(refClose, open + Math.min(span, 18))
+        high = Math.max(close, inv > open ? inv : close + 4)
+        low = Math.min(open, open - 3)
+      } else {
+        high = open + 6
+        low = open - 6
+        close = open
+      }
+      const style =
+        horizon === 1
+          ? {
+              color: COLORS.plus1Body,
+              borderColor: COLORS.plus1Border,
+              wickColor: COLORS.plus1Wick,
+            }
+          : {
+              color: COLORS.plus2Body,
+              borderColor: COLORS.plus2Border,
+              wickColor: COLORS.plus2Wick,
+            }
+      candleData.push({
+        time: openTime as Time,
+        open,
+        high,
+        low,
+        close,
+        ...style,
+      })
+      volData.push({
+        time: openTime as Time,
+        value: 0,
+        color:
+          horizon === 1
+            ? 'rgba(110, 176, 255, 0.35)'
+            : 'rgba(155, 176, 232, 0.3)',
+      })
+      map.set(openTime, {
+        openTime,
+        closeTime: openTime + BAR_SEC,
+        open,
+        high,
+        low,
+        close,
+        volume: 0,
+        isNext: true,
+        forming: false,
+      })
+    }
+
+    if (suggestions?.plus1) {
+      pushSuggestionCandle(
+        1,
+        formingOpen + BAR_SEC,
+        suggestions.plus1.bias,
+        suggestions.plus1.invalidation,
+        suggestions.plus1.lastClose,
+      )
+    }
+    if (suggestions?.plus2) {
+      pushSuggestionCandle(
+        2,
+        formingOpen + BAR_SEC * 2,
+        suggestions.plus2.bias,
+        suggestions.plus2.invalidation,
+        suggestions.plus2.lastClose,
+      )
+    }
+
     byTimeRef.current = map
     barCountRef.current = candleData.length
     series.setData(candleData)
@@ -359,22 +454,51 @@ export function CandleChart({ candles, suggestions, livePrice, mark }: Props) {
         position: 'aboveBar',
         color: glow.border,
         shape: 'arrowDown',
-        text: suggestion ? `${glow.label}` : 'FORMING',
+        text: 'FORMING',
+      })
+    }
+    if (suggestions?.plus1) {
+      markers.push({
+        time: (formingOpen + BAR_SEC) as Time,
+        position: 'aboveBar',
+        color: COLORS.plus1Border,
+        shape: 'circle',
+        text: '+1',
+      })
+    }
+    if (suggestions?.plus2) {
+      markers.push({
+        time: (formingOpen + BAR_SEC * 2) as Time,
+        position: 'aboveBar',
+        color: COLORS.plus2Border,
+        shape: 'square',
+        text: '+2',
       })
     }
     markersApi?.setMarkers(markers)
 
-    // Only set default window once — never steal zoom/pan on poll updates
+    // Default window must include +1 and +2 suggestion candles on the right
     if (!initialViewDoneRef.current) {
       initialViewDoneRef.current = true
       const n = candleData.length
       const show = Math.min(DEFAULT_VISIBLE, n)
       chart.timeScale().setVisibleLogicalRange({
         from: n - show - 0.5,
-        to: n + 1.5,
+        to: n + 0.5,
       })
+    } else if (!userInteractedRef.current && suggestions) {
+      // Keep +2 in view when user hasn't panned away
+      const range = chart.timeScale().getVisibleLogicalRange()
+      const n = candleData.length
+      if (range && range.to < n - 0.2) {
+        const width = range.to - range.from
+        chart.timeScale().setVisibleLogicalRange({
+          from: n - width,
+          to: n + 0.5,
+        })
+      }
     }
-  }, [candles, suggestion, livePrice, mark, glow])
+  }, [candles, suggestion, suggestions, livePrice, mark, glow])
 
   useEffect(() => {
     const series = seriesRef.current
@@ -504,14 +628,12 @@ export function CandleChart({ candles, suggestions, livePrice, mark }: Props) {
             )}
             {suggestions && (
               <div>
-                Windows{' '}
-                <span className="text-[var(--tvate-text)]">
-                  +1 {suggestions.plus1.bucketLabel}
-                </span>
+                Chart candles:{' '}
+                <span className="text-[#5aa2ff]">FORMING</span>
                 {' · '}
-                <span className="text-[var(--tvate-text)]">
-                  +2 {suggestions.plus2.bucketLabel}
-                </span>
+                <span className="text-[#6eb0ff]">+1 {suggestions.plus1.bucketLabel}</span>
+                {' · '}
+                <span className="text-[#a8b8f0]">+2 {suggestions.plus2.bucketLabel}</span>
               </div>
             )}
           </div>
