@@ -346,17 +346,20 @@ async function connectTradovate(creds: TradovateCreds) {
     tvCache.error = null
   }
 
+  const authBody: Record<string, string | number | boolean> = {
+    name: creds.name,
+    password: creds.password,
+    appId: creds.appId,
+    appVersion: creds.appVersion,
+    'p-ticket': '',
+  }
+  if (creds.cid) authBody.cid = Number(creds.cid) || creds.cid
+  if (creds.sec) authBody.sec = creds.sec
+
   const authRes = await fetch(urls.auth, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({
-      name: creds.name,
-      password: creds.password,
-      appId: creds.appId,
-      appVersion: creds.appVersion,
-      cid: Number(creds.cid),
-      sec: creds.sec,
-    }),
+    body: JSON.stringify(authBody),
   })
   const authJson = (await authRes.json()) as {
     errorText?: string
