@@ -116,13 +116,13 @@ export function patchFormingFromMark(
   const isLastFeedBar = targetIdx === next.length - 1
 
   if (inWindow || (isLastFeedBar && markBucket === bar.time)) {
+    // Tradovate: open fixed for the bucket; high/low/close morph with ticks
     bar.close = mark.price
-    bar.high = Math.max(bar.high, mark.price)
-    bar.low = Math.min(bar.low, mark.price)
+    bar.high = Math.max(bar.high, bar.open, mark.price)
+    bar.low = Math.min(bar.low, bar.open, mark.price)
     bar.forming = true
-  } else if (isLastFeedBar) {
-    // Mark is delayed but still the best print for highlighting the feed's last bar
-    bar.forming = bar.volume === 0 || true
+  } else if (isLastFeedBar && markBucket === last.time) {
+    bar.forming = true
   }
 
   // Clear forming on older bars

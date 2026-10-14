@@ -16,7 +16,7 @@ import {
   type SeriesMarker,
   type Time,
 } from 'lightweight-charts'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BAR_SEC,
   DISPLAY_ET,
@@ -44,6 +44,8 @@ const COLORS = {
   nextBorder: '#3d8bfd',
   nextWick: '#5aa2ff',
 }
+
+const DEFAULT_VISIBLE = 100
 
 type Props = {
   candles: Candle[]
@@ -83,12 +85,57 @@ export function CandleChart({ candles, suggestion, livePrice, mark }: Props) {
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null)
   const linesRef = useRef<IPriceLine[]>([])
   const byTimeRef = useRef<Map<number, HoverInfo>>(new Map())
+  const barCountRef = useRef(0)
+  const userInteractedRef = useRef(false)
+  const initialViewDoneRef = useRef(false)
   const [hover, setHover] = useState<HoverInfo | null>(null)
 
   const glow = useMemo(
     () => suggestionHighlight(suggestion?.bias),
     [suggestion?.bias],
   )
+
+  const resetView = useCallback(() => {
+    const chart = chartRef.current
+    const series = seriesRef.current
+    if (!chart || !series) return
+    const n = barCountRef.current
+    if (n <= 0) return
+    const show = Math.min(DEFAULT_VISIBLE, n)
+    // Leave a couple slots for NEXT marker on the right
+    chart.timeScale().setVisibleLogicalRange({
+      from: n - show - 0.5,
+      to: n + 1.5,
+    })
+    series.priceScale().applyOptions({ autoScale: true })
+    userInteractedRef.current = false
+  }, [])
+
+  const zoomTime = useCallback((factor: number) => {
+    const chart = chartRef.current
+    if (!chart) return
+    const range = chart.timeScale().getVisibleLogicalRange()
+    if (!range) return
+    userInteractedRef.current = true
+    const mid = (range.from + range.to) / 2
+    const half = Math.max(3, ((range.to - range.from) / 2) * factor)
+    chart.timeScale().setVisibleLogicalRange({
+      from: mid - half,
+      to: mid + half,
+    })
+    seriesRef.current?.priceScale().applyOptions({ autoScale: true })
+  }, [])
+
+  const panTime = useCallback((bars: number) => {
+    const chart = chartRef.current
+    if (!chart) return
+    userInteractedRef.current = true
+    // animated kinetic-style nudge
+    chart.timeScale().scrollToPosition(
+      (chart.timeScale().scrollPosition() || 0) + bars,
+      true,
+    )
+  }, [])
 
   useEffect(() => {
     const el = wrapRef.current
@@ -109,14 +156,17 @@ export function CandleChart({ candles, suggestion, livePrice, mark }: Props) {
       rightPriceScale: {
         borderColor: COLORS.border,
         scaleMargins: { top: 0.06, bottom: 0.28 },
+        // allow drag on price axis for Y zoom
+        entireTextOnly: false,
       },
       timeScale: {
         borderColor: COLORS.border,
         timeVisible: true,
         secondsVisible: false,
-        rightOffset: 4,
-        barSpacing: 8,
-        minBarSpacing: 4,
+        rightOffset: 6,
+        barSpacing: 9,
+        minBarSpacing: 2,
+        lockVisibleTimeRangeOnResize: true,
         tickMarkFormatter: (time: Time) => {
           const sec = typeof time === 'number' ? time : 0
           return formatClock(sec, EXCHANGE_TZ, false)
@@ -127,6 +177,23 @@ export function CandleChart({ candles, suggestion, livePrice, mark }: Props) {
           const sec = typeof time === 'number' ? time : 0
           return `${formatClock(sec, EXCHANGE_TZ, false)} CT / ${formatClock(sec, DISPLAY_ET, false)} ET`
         },
+      },
+      // Tradovate-like interaction
+      handleScroll: {
+        mouseWheel: true,
+        pressedMouseMove: true,
+        horzTouchDrag: true,
+        vertTouchDrag: true,
+      },
+      handleScale: {
+        mouseWheel: true,
+        pinch: true,
+        axisPressedMouseMove: { time: true, price: true },
+        axisDoubleClickReset: { time: true, price: true },
+      },
+      kineticScroll: {
+        mouse: true,
+        touch: true,
       },
       crosshair: {
         mode: CrosshairMode.Normal,
@@ -178,12 +245,22 @@ export function CandleChart({ candles, suggestion, livePrice, mark }: Props) {
         return
       }
       const sec = typeof param.time === 'number' ? param.time : 0
-      const info = byTimeRef.current.get(sec)
-      setHover(info ?? null)
+      setHover(byTimeRef.current.get(sec) ?? null)
     }
     chart.subscribeCrosshairMove(onMove)
 
+    const markInteract = () => {
+      userInteractedRef.current = true
+    }
+    chart.timeScale().subscribeVisibleLogicalRangeChange(markInteract)
+
+    const onDblClick = () => {
+      resetView()
+    }
+    el.addEventListener('dblclick', onDblClick)
+
     return () => {
+      el.removeEventListener('dblclick', onDblClick)
       chart.unsubscribeCrosshairMove(onMove)
       chart.remove()
       chartRef.current = null
@@ -191,8 +268,9 @@ export function CandleChart({ candles, suggestion, livePrice, mark }: Props) {
       volumeRef.current = null
       markersRef.current = null
       linesRef.current = []
+      initialViewDoneRef.current = false
     }
-  }, [])
+  }, [resetView])
 
   useEffect(() => {
     const series = seriesRef.current
@@ -201,7 +279,8 @@ export function CandleChart({ candles, suggestion, livePrice, mark }: Props) {
     const markersApi = markersRef.current
     if (!series || !volume || !chart || !candles.length) return
 
-    const slice = candles.slice(-96)
+    // Full history for pan — not truncated to ~90
+    const slice = candles.length > 400 ? candles.slice(-400) : candles
     const last = slice[slice.length - 1]
     const markInLast =
       mark.sourceTime >= last.time && mark.sourceTime < last.time + BAR_SEC
@@ -210,17 +289,19 @@ export function CandleChart({ candles, suggestion, livePrice, mark }: Props) {
     const volData: HistogramData<Time>[] = []
     const map = new Map<number, HoverInfo>()
 
+    // Tradovate-style: exactly one forming candle = current open 5m bucket.
+    // No projected "ghost NEXT" candle — suggestion stays a blue overlay/HUD only.
     for (let i = 0; i < slice.length; i++) {
       const c = slice[i]
-      // Whitespace for session gaps: LWC leaves a visual hole when times skip
-      const isLast = i === slice.length - 1
+      const isForming = Boolean(c.forming) || (i === slice.length - 1 && markInLast)
       let close = c.close
       let high = c.high
       let low = c.low
-      if (isLast && livePrice != null && (c.forming || markInLast)) {
+      // Morph forming OHLC in place with mark ticks (open stays fixed)
+      if (isForming && livePrice != null) {
         close = livePrice
-        high = Math.max(high, livePrice)
-        low = Math.min(low, livePrice)
+        high = Math.max(c.high, c.open, livePrice)
+        low = Math.min(c.low, c.open, livePrice)
       }
 
       const point: CandlestickData<Time> = {
@@ -230,7 +311,8 @@ export function CandleChart({ candles, suggestion, livePrice, mark }: Props) {
         low,
         close,
       }
-      if ((c.forming || isLast) && suggestion) {
+      if (isForming) {
+        // Blue suggestion treatment on the real forming bar only
         point.color = glow.body
         point.borderColor = glow.border
         point.wickColor = glow.wick
@@ -239,7 +321,11 @@ export function CandleChart({ candles, suggestion, livePrice, mark }: Props) {
       volData.push({
         time: c.time as Time,
         value: c.volume,
-        color: close >= c.open ? COLORS.volUp : COLORS.volDown,
+        color: isForming
+          ? 'rgba(61, 139, 253, 0.45)'
+          : close >= c.open
+            ? COLORS.volUp
+            : COLORS.volDown,
       })
       map.set(c.time, {
         openTime: c.time,
@@ -249,83 +335,39 @@ export function CandleChart({ candles, suggestion, livePrice, mark }: Props) {
         low,
         close,
         volume: c.volume,
-        forming: c.forming,
-      })
-    }
-
-    // Projected NEXT bar = next 5m bucket AFTER feed last bar (not wall-clock now)
-    if (suggestion) {
-      const nextTime = last.time + BAR_SEC
-      const open = livePrice ?? last.close
-      let high = open
-      let low = open
-      let close = open
-      if (suggestion.bias === 'bearish') {
-        const target = Math.min(suggestion.swingLow, open - 8)
-        close = Math.min(open - 4, (open + target) / 2)
-        low = Math.min(target, suggestion.swingLow)
-        high = Math.max(open, suggestion.invalidation)
-      } else if (suggestion.bias === 'bullish') {
-        const target = Math.max(suggestion.swingHigh, open + 8)
-        close = Math.max(open + 4, (open + target) / 2)
-        high = Math.max(target, suggestion.swingHigh)
-        low = Math.min(open, suggestion.invalidation)
-      } else {
-        high = open + 6
-        low = open - 6
-      }
-      candleData.push({
-        time: nextTime as Time,
-        open,
-        high,
-        low,
-        close,
-        color: glow.body,
-        borderColor: glow.border,
-        wickColor: glow.wick,
-      })
-      volData.push({
-        time: nextTime as Time,
-        value: 0,
-        color: 'rgba(61, 139, 253, 0.35)',
-      })
-      map.set(nextTime, {
-        openTime: nextTime,
-        closeTime: nextTime + BAR_SEC,
-        open,
-        high,
-        low,
-        close,
-        volume: 0,
-        isNext: true,
+        forming: isForming,
       })
     }
 
     byTimeRef.current = map
+    barCountRef.current = candleData.length
     series.setData(candleData)
     volume.setData(volData)
 
+    const formingBar =
+      slice.find((c) => c.forming) ?? (markInLast ? last : undefined)
     const markers: SeriesMarker<Time>[] = []
-    if (suggestion) {
+    if (formingBar) {
       markers.push({
-        time: last.time as Time,
+        time: formingBar.time as Time,
         position: 'aboveBar',
         color: glow.border,
         shape: 'arrowDown',
-        text: last.forming ? 'FORMING' : 'LAST',
-      })
-      markers.push({
-        time: (last.time + BAR_SEC) as Time,
-        position: 'aboveBar',
-        color: glow.border,
-        shape: 'circle',
-        text: glow.label,
+        text: suggestion ? `${glow.label}` : 'FORMING',
       })
     }
     markersApi?.setMarkers(markers)
 
-    // Stay on feed timeline — do not jump to wall-clock "now"
-    chart.timeScale().fitContent()
+    // Only set default window once — never steal zoom/pan on poll updates
+    if (!initialViewDoneRef.current) {
+      initialViewDoneRef.current = true
+      const n = candleData.length
+      const show = Math.min(DEFAULT_VISIBLE, n)
+      chart.timeScale().setVisibleLogicalRange({
+        from: n - show - 0.5,
+        to: n + 1.5,
+      })
+    }
   }, [candles, suggestion, livePrice, mark, glow])
 
   useEffect(() => {
@@ -364,26 +406,54 @@ export function CandleChart({ candles, suggestion, livePrice, mark }: Props) {
   const forming = candles.find((c) => c.forming) ?? candles[candles.length - 1]
   const nextOpen = forming ? forming.time + BAR_SEC : null
 
-  return (
-    <div className="relative h-full min-h-[520px] w-full bg-[var(--tvate-bg)]">
-      <div
-        ref={wrapRef}
-        className="absolute inset-0"
-        aria-label="Tradovate-style NQZ6 5-minute chart (CME time)"
-      />
+  const btn =
+    'rounded border border-[var(--tvate-border)] bg-[var(--tvate-panel-2)] px-2 py-1 text-[11px] font-semibold text-[var(--tvate-text)] hover:bg-[#222833] active:bg-[#2a313c]'
 
-      <div className="pointer-events-none absolute left-3 top-3 z-10 max-w-[340px] space-y-1.5">
-        {suggestion && (
-          <div
-            className="rounded border px-2.5 py-1.5 text-[11px] shadow-lg"
-            style={{
-              background: 'rgba(18, 21, 26, 0.94)',
-              borderColor: COLORS.nextBorder,
-              color: COLORS.nextBorder,
-            }}
-          >
+  return (
+    <div className="relative flex h-full min-h-[520px] w-full flex-col bg-[var(--tvate-bg)]">
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-[var(--tvate-border)] bg-[var(--tvate-panel)] px-2 py-1">
+        <span className="mr-1 text-[10px] uppercase tracking-wide text-[var(--tvate-muted)]">
+          Chart nav
+        </span>
+        <button type="button" className={btn} onClick={() => zoomTime(0.75)} title="Zoom in (time)">
+          +
+        </button>
+        <button type="button" className={btn} onClick={() => zoomTime(1.35)} title="Zoom out (time)">
+          −
+        </button>
+        <button type="button" className={btn} onClick={() => panTime(8)} title="Pan left">
+          ←
+        </button>
+        <button type="button" className={btn} onClick={() => panTime(-8)} title="Pan right">
+          →
+        </button>
+        <button type="button" className={btn} onClick={resetView} title="Reset to last ~100 bars">
+          Reset
+        </button>
+        <span className="ml-2 text-[10px] text-[var(--tvate-muted)]">
+          Wheel zoom · drag pan · pinch · Shift/axis-drag price · dbl-click reset
+        </span>
+      </div>
+
+      <div className="relative min-h-0 flex-1">
+        <div
+          ref={wrapRef}
+          className="absolute inset-0 cursor-crosshair"
+          aria-label="Tradovate-style NQZ6 5-minute chart (CME time)"
+        />
+
+        <div className="pointer-events-none absolute left-3 top-3 z-10 max-w-[340px] space-y-1.5">
+          {suggestion && (
+            <div
+              className="rounded border px-2.5 py-1.5 text-[11px] shadow-lg"
+              style={{
+                background: 'rgba(18, 21, 26, 0.94)',
+                borderColor: COLORS.nextBorder,
+                color: COLORS.nextBorder,
+              }}
+            >
             <div className="font-semibold tracking-wide">
-              {glow.label} · NEXT-CANDLE CALL
+              {glow.label} · SUGGESTION (overlay)
             </div>
             <div className="mt-0.5 font-mono text-[10px] leading-snug text-[var(--tvate-text)]">
               {suggestion.oneLiner}
@@ -391,55 +461,55 @@ export function CandleChart({ candles, suggestion, livePrice, mark }: Props) {
           </div>
         )}
 
-        <div className="rounded border border-[var(--tvate-border)] bg-[rgba(18,21,26,0.92)] px-2.5 py-1.5 font-mono text-[10px] text-[var(--tvate-muted)]">
-          <div className="text-[var(--tvate-text)]">
-            Axis: CME {EXCHANGE_TZ.split('/')[1]} (CT) · also shown ET in
-            crosshair
-          </div>
-          {forming && (
-            <div>
-              Forming bucket{' '}
-              <span className="text-[var(--tvate-text)]">
-                {formatClock(forming.time, EXCHANGE_TZ)}–
-                {formatClock(forming.time + BAR_SEC, EXCHANGE_TZ)} CT
-              </span>
-              {' · '}
-              mark as-of {formatClock(mark.sourceTime, EXCHANGE_TZ, true)} CT
+          <div className="rounded border border-[var(--tvate-border)] bg-[rgba(18,21,26,0.92)] px-2.5 py-1.5 font-mono text-[10px] text-[var(--tvate-muted)]">
+            <div className="text-[var(--tvate-text)]">
+              Forming = Tradovate-style live bar (one bucket) · Axis CT
             </div>
-          )}
-          {nextOpen != null && (
-            <div>
-              NEXT zone opens{' '}
-              <span className="text-[#5aa2ff]">
-                {formatClock(nextOpen, EXCHANGE_TZ)} CT
-              </span>
-              {mark.freshness !== 'live' && (
-                <span> · feed-time (not wall-clock now)</span>
-              )}
+            {forming && (
+              <div>
+                Open bucket{' '}
+                <span className="text-[#5aa2ff]">
+                  {formatClock(forming.time, EXCHANGE_TZ)}–
+                  {formatClock(forming.time + BAR_SEC, EXCHANGE_TZ)} CT
+                </span>
+                {' · '}
+                mark {formatClock(mark.sourceTime, EXCHANGE_TZ, true)} CT
+              </div>
+            )}
+            {nextOpen != null && (
+              <div>
+                Closes → new forming at{' '}
+                <span className="text-[var(--tvate-text)]">
+                  {formatClock(nextOpen, EXCHANGE_TZ)} CT
+                </span>
+                {mark.freshness !== 'live' && (
+                  <span> · feed-time</span>
+                )}
+              </div>
+            )}
+          </div>
+
+          {hover && (
+            <div className="rounded border border-[var(--tvate-border)] bg-[rgba(18,21,26,0.95)] px-2.5 py-1.5 font-mono text-[10px] text-[var(--tvate-text)]">
+              <div className="text-[var(--tvate-muted)]">
+                {hover.forming ? 'Forming' : 'Bar'} ·{' '}
+                {formatInZone(hover.openTime, EXCHANGE_TZ)} CT →{' '}
+                {formatClock(hover.closeTime, EXCHANGE_TZ)} CT
+              </div>
+              <div className="text-[var(--tvate-muted)]">
+                ET {formatClock(hover.openTime, DISPLAY_ET)}–
+                {formatClock(hover.closeTime, DISPLAY_ET)}
+              </div>
+              <div>
+                O {hover.open.toFixed(2)} · H {hover.high.toFixed(2)} · L{' '}
+                {hover.low.toFixed(2)} · C {hover.close.toFixed(2)}
+              </div>
+              <div className="text-[var(--tvate-muted)]">
+                Vol {Math.round(hover.volume).toLocaleString()}
+              </div>
             </div>
           )}
         </div>
-
-        {hover && (
-          <div className="rounded border border-[var(--tvate-border)] bg-[rgba(18,21,26,0.95)] px-2.5 py-1.5 font-mono text-[10px] text-[var(--tvate-text)]">
-            <div className="text-[var(--tvate-muted)]">
-              {hover.isNext ? 'NEXT zone' : hover.forming ? 'Forming' : 'Bar'} ·{' '}
-              {formatInZone(hover.openTime, EXCHANGE_TZ)} CT →{' '}
-              {formatClock(hover.closeTime, EXCHANGE_TZ)} CT
-            </div>
-            <div className="text-[var(--tvate-muted)]">
-              ET {formatClock(hover.openTime, DISPLAY_ET)}–
-              {formatClock(hover.closeTime, DISPLAY_ET)}
-            </div>
-            <div>
-              O {hover.open.toFixed(2)} · H {hover.high.toFixed(2)} · L{' '}
-              {hover.low.toFixed(2)} · C {hover.close.toFixed(2)}
-            </div>
-            <div className="text-[var(--tvate-muted)]">
-              Vol {Math.round(hover.volume).toLocaleString()}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   )
