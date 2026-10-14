@@ -27,11 +27,12 @@ const COLORS = {
   down: '#e74c3c',
   upBorder: '#27ae60',
   downBorder: '#c0392b',
-  bullGlow: '#2ecc71',
-  bearGlow: '#e74c3c',
-  neutralGlow: '#f0a500',
   invalid: '#f0a500',
   ema: '#3d8bfd',
+  /** NEXT / forming suggestion highlight — always blue */
+  nextBody: 'rgba(61, 139, 253, 0.42)',
+  nextBorder: '#3d8bfd',
+  nextWick: '#5aa2ff',
 }
 
 type Props = {
@@ -40,28 +41,14 @@ type Props = {
   livePrice?: number
 }
 
-function biasColors(bias: NextCandleSuggestion['bias'] | undefined) {
-  if (bias === 'bullish') {
-    return {
-      body: 'rgba(46, 204, 113, 0.38)',
-      border: COLORS.bullGlow,
-      wick: COLORS.bullGlow,
-      label: 'NEXT ▲',
-    }
-  }
-  if (bias === 'bearish') {
-    return {
-      body: 'rgba(231, 76, 60, 0.38)',
-      border: COLORS.bearGlow,
-      wick: COLORS.bearGlow,
-      label: 'NEXT ▼',
-    }
-  }
+function suggestionHighlight(bias: NextCandleSuggestion['bias'] | undefined) {
+  const label =
+    bias === 'bullish' ? 'NEXT ▲' : bias === 'bearish' ? 'NEXT ▼' : 'NEXT ·'
   return {
-    body: 'rgba(240, 165, 0, 0.3)',
-    border: COLORS.neutralGlow,
-    wick: COLORS.neutralGlow,
-    label: 'NEXT ·',
+    body: COLORS.nextBody,
+    border: COLORS.nextBorder,
+    wick: COLORS.nextWick,
+    label,
   }
 }
 
@@ -154,7 +141,7 @@ export function CandleChart({ candles, suggestion, livePrice }: Props) {
       last.high = Math.max(last.high, livePrice)
       last.low = Math.min(last.low, livePrice)
     }
-    const glow = biasColors(suggestion?.bias)
+    const glow = suggestionHighlight(suggestion?.bias)
 
     const data: CandlestickData<Time>[] = slice.map((c, idx) => {
       const isLast = idx === slice.length - 1
@@ -246,7 +233,7 @@ export function CandleChart({ candles, suggestion, livePrice }: Props) {
 
     for (const line of linesRef.current) series.removePriceLine(line)
 
-    const glow = biasColors(suggestion.bias)
+    const glow = suggestionHighlight(suggestion.bias)
     const mark = livePrice ?? suggestion.lastClose
     const specs = [
       {
@@ -264,7 +251,7 @@ export function CandleChart({ candles, suggestion, livePrice }: Props) {
       {
         price: mark,
         color: glow.border,
-        title: 'LIVE',
+        title: 'MARK',
         style: LineStyle.Solid,
       },
     ]
@@ -293,12 +280,12 @@ export function CandleChart({ candles, suggestion, livePrice }: Props) {
           className="pointer-events-none absolute left-3 top-3 z-10 max-w-[300px] rounded border px-2.5 py-1.5 text-[11px] shadow-lg"
           style={{
             background: 'rgba(18, 21, 26, 0.94)',
-            borderColor: biasColors(suggestion.bias).border,
-            color: biasColors(suggestion.bias).border,
+            borderColor: COLORS.nextBorder,
+            color: COLORS.nextBorder,
           }}
         >
           <div className="font-semibold tracking-wide">
-            {biasColors(suggestion.bias).label} · NEXT-CANDLE CALL
+            {suggestionHighlight(suggestion.bias).label} · NEXT-CANDLE CALL
           </div>
           <div className="mt-0.5 font-mono text-[10px] leading-snug text-[var(--tvate-text)]">
             {suggestion.oneLiner}
