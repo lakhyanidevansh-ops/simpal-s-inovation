@@ -26,9 +26,12 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
-export function analyzeNextCandle(candles: Candle[]): NextCandleSuggestion {
+export function analyzeNextCandle(
+  candles: Candle[],
+  livePrice?: number,
+): NextCandleSuggestion {
   if (candles.length < 25) {
-    const last = candles[candles.length - 1]?.close ?? 0
+    const last = livePrice ?? candles[candles.length - 1]?.close ?? 0
     return {
       bias: 'neutral',
       lastClose: last,
@@ -49,11 +52,18 @@ export function analyzeNextCandle(candles: Candle[]): NextCandleSuggestion {
   }
 
   const closes = candles.map((c) => c.close)
+  // Prefer live mark on the forming bar for EMA/price vs levels
+  if (livePrice != null && closes.length) closes[closes.length - 1] = livePrice
   const e9 = ema(closes, 9)
   const e21 = ema(closes, 21)
   const ema9 = e9[e9.length - 1]
   const ema21 = e21[e21.length - 1]
-  const last = candles[candles.length - 1]
+  const last = { ...candles[candles.length - 1] }
+  if (livePrice != null) {
+    last.close = livePrice
+    last.high = Math.max(last.high, livePrice)
+    last.low = Math.min(last.low, livePrice)
+  }
   const prior = candles[candles.length - 2]
   const lastClose = last.close
 

@@ -55,3 +55,37 @@ body {
 .tvate-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
+
+@keyframes priceFlashUp {
+  0% {
+    background-color: rgba(46, 204, 113, 0.35);
+    text-shadow: 0 0 12px rgba(46, 204, 113, 0.7);
+  }
+  100% {
+    background-color: transparent;
+    text-shadow: none;
+  }
+}
+
+@keyframes priceFlashDown {
+  0% {
+    background-color: rgba(231, 76, 60, 0.35);
+    text-shadow: 0 0 12px rgba(231, 76, 60, 0.7);
+  }
+  100% {
+    background-color: transparent;
+    text-shadow: none;
+  }
+}
+
+.price-flash-up {
+  animation: priceFlashUp 0.45s ease-out;
+  border-radius: 4px;
+  padding: 0 6px;
+}
+
+.price-flash-down {
+  animation: priceFlashDown 0.45s ease-out;
+  border-radius: 4px;
+  padding: 0 6px;
+}

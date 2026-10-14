@@ -37,6 +37,7 @@ const COLORS = {
 type Props = {
   candles: Candle[]
   suggestion: NextCandleSuggestion | null
+  livePrice?: number
 }
 
 function biasColors(bias: NextCandleSuggestion['bias'] | undefined) {
@@ -64,7 +65,7 @@ function biasColors(bias: NextCandleSuggestion['bias'] | undefined) {
   }
 }
 
-export function CandleChart({ candles, suggestion }: Props) {
+export function CandleChart({ candles, suggestion, livePrice }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -147,18 +148,29 @@ export function CandleChart({ candles, suggestion }: Props) {
     if (!series || !chart || !candles.length) return
 
     const slice = candles.slice(-90)
-    const last = slice[slice.length - 1]
+    const last = { ...slice[slice.length - 1] }
+    if (livePrice != null) {
+      last.close = livePrice
+      last.high = Math.max(last.high, livePrice)
+      last.low = Math.min(last.low, livePrice)
+    }
     const glow = biasColors(suggestion?.bias)
 
     const data: CandlestickData<Time>[] = slice.map((c, idx) => {
+      const isLast = idx === slice.length - 1
+      const close = isLast && livePrice != null ? livePrice : c.close
+      const high =
+        isLast && livePrice != null ? Math.max(c.high, livePrice) : c.high
+      const low =
+        isLast && livePrice != null ? Math.min(c.low, livePrice) : c.low
       const base: CandlestickData<Time> = {
         time: c.time as Time,
         open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
+        high,
+        low,
+        close,
       }
-      if (idx === slice.length - 1 && suggestion) {
+      if (isLast && suggestion) {
         return {
           ...base,
           color: glow.body,
@@ -171,7 +183,7 @@ export function CandleChart({ candles, suggestion }: Props) {
 
     if (suggestion) {
       const nextTime = (last.time + BAR_SEC) as Time
-      const open = last.close
+      const open = livePrice ?? last.close
       let high = open
       let low = open
       let close = open
@@ -226,7 +238,7 @@ export function CandleChart({ candles, suggestion }: Props) {
     markersApi?.setMarkers(markers)
 
     chart.timeScale().scrollToRealTime()
-  }, [candles, suggestion])
+  }, [candles, suggestion, livePrice])
 
   useEffect(() => {
     const series = seriesRef.current
@@ -235,6 +247,7 @@ export function CandleChart({ candles, suggestion }: Props) {
     for (const line of linesRef.current) series.removePriceLine(line)
 
     const glow = biasColors(suggestion.bias)
+    const mark = livePrice ?? suggestion.lastClose
     const specs = [
       {
         price: suggestion.invalidation,
@@ -249,9 +262,9 @@ export function CandleChart({ candles, suggestion }: Props) {
         style: LineStyle.Dotted,
       },
       {
-        price: suggestion.lastClose,
+        price: mark,
         color: glow.border,
-        title: 'LAST',
+        title: 'LIVE',
         style: LineStyle.Solid,
       },
     ]
@@ -266,7 +279,7 @@ export function CandleChart({ candles, suggestion }: Props) {
         title: l.title,
       }),
     )
-  }, [suggestion])
+  }, [suggestion, livePrice])
 
   return (
     <div className="relative h-full min-h-[460px] w-full bg-[var(--tvate-bg)]">

@@ -2,7 +2,7 @@
 
 Near-live **Nasdaq-100 Dec futures (NQZ6 / NQZ26.CME)** on the **5-minute** chart for Gujju Gaming / Trading Cycle.
 
-The UI is a **Tradovate-style** dark trading desk (chart + order-ticket-adjacent panel) — **not** TradingView branding/layout. It polls Yahoo Finance every **20 seconds**, redraws 5m candles, and highlights the **forming candle + projected next 5m zone** in bullish/bearish/neutral colors tied to the live next-candle suggestion.
+The UI is a **Tradovate-style** dark trading desk (chart + order-ticket-adjacent panel) — **not** TradingView branding/layout. It polls Yahoo Finance every **3 seconds** (5m + 1m), shows a **large live mark** with change/% and flash on ticks, stamps **source as-of / data age**, and highlights the **forming candle + projected next 5m zone** tied to that same live print.
 
 ## Run locally
 

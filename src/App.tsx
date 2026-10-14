@@ -1,29 +1,26 @@
 import { CandleChart } from './components/CandleChart'
 import { KeyLevels } from './components/KeyLevels'
+import { LivePriceStrip } from './components/LivePriceStrip'
 import { OrderTicketPanel } from './components/OrderTicketPanel'
 import { RecentCandles } from './components/RecentCandles'
 import { useLiveNqz6 } from './hooks/useLiveNqz6'
 
-function formatClock(ts: number | null): string {
-  if (!ts) return '—'
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  }).format(new Date(ts))
-}
-
 export default function App() {
-  const { snapshot, suggestion, status, error, lastSuccessAt, pollMs } =
-    useLiveNqz6()
+  const {
+    snapshot,
+    suggestion,
+    status,
+    error,
+    lastSuccessAt,
+    pollMs,
+    now,
+    priceFlash,
+  } = useLiveNqz6()
 
   const live = Boolean(snapshot && suggestion)
 
   return (
     <div className="flex h-full min-h-screen flex-col bg-[var(--tvate-bg)] text-[var(--tvate-text)]">
-      {/* Tradovate-style top chrome */}
       <header className="flex flex-wrap items-center gap-3 border-b border-[var(--tvate-border)] bg-[var(--tvate-panel)] px-3 py-2">
         <div className="flex items-center gap-2">
           <div className="flex h-7 w-7 items-center justify-center rounded bg-[#1f6feb] text-[11px] font-bold">
@@ -57,13 +54,25 @@ export default function App() {
             />
             <span className="capitalize">{status}</span>
             <span className="text-[var(--tvate-muted)]">
-              · {pollMs / 1000}s · {formatClock(lastSuccessAt)} ET
+              · poll {pollMs / 1000}s
+              {lastSuccessAt
+                ? ` · ok ${Math.max(0, Math.round((now - lastSuccessAt) / 1000))}s ago`
+                : ''}
             </span>
           </span>
         </div>
       </header>
 
-      {/* Chart toolbar */}
+      {snapshot && (
+        <LivePriceStrip
+          snapshot={snapshot}
+          now={now}
+          flash={priceFlash}
+          pollMs={pollMs}
+          status={status}
+        />
+      )}
+
       <div className="flex flex-wrap items-center gap-2 border-b border-[var(--tvate-border)] bg-[var(--tvate-panel-2)] px-3 py-1.5 text-[11px] text-[var(--tvate-muted)]">
         <span className="rounded bg-[var(--tvate-bg)] px-2 py-0.5 text-[var(--tvate-text)]">
           Candlestick
@@ -73,22 +82,14 @@ export default function App() {
         <span>Price axis</span>
         <span>Time axis</span>
         <span className="text-[var(--tvate-warn)]">NEXT bar highlight ON</span>
-        {snapshot && (
-          <span className="ml-auto font-mono text-[var(--tvate-text)]">
-            Last {snapshot.regularMarketPrice.toFixed(2)}
-            {snapshot.previousClose != null && (
-              <span className="text-[var(--tvate-muted)]">
-                {' '}
-                · prev {snapshot.previousClose.toFixed(2)}
-              </span>
-            )}
-          </span>
-        )}
+        <span className="ml-auto font-mono text-[var(--tvate-text)]">
+          Fast poll · live mark drives forming bar + suggestion
+        </span>
       </div>
 
       {status === 'loading' && !snapshot && (
         <div className="flex flex-1 items-center justify-center text-[var(--tvate-muted)]">
-          Loading NQZ6 5m from Yahoo…
+          Loading NQZ6 live mark + 5m from Yahoo…
         </div>
       )}
 
@@ -103,11 +104,15 @@ export default function App() {
         <>
           <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px]">
             <div className="min-h-[460px] border-b border-[var(--tvate-border)] lg:border-b-0">
-              <CandleChart candles={snapshot.candles} suggestion={suggestion} />
+              <CandleChart
+                candles={snapshot.candles}
+                suggestion={suggestion}
+                livePrice={snapshot.livePrice}
+              />
             </div>
             <OrderTicketPanel
               suggestion={suggestion}
-              lastPrice={snapshot.regularMarketPrice}
+              lastPrice={snapshot.livePrice}
               symbol={snapshot.symbol}
             />
           </div>
@@ -121,10 +126,11 @@ export default function App() {
           </div>
 
           <footer className="border-t border-[var(--tvate-border)] bg-[var(--tvate-panel)] px-3 py-2 text-[10px] text-[var(--tvate-muted)]">
-            Source: {snapshot.source}. Yahoo CME quotes are often delayed.
-            Chart chrome is <strong className="text-[var(--tvate-text)]">Tradovate-style</strong>{' '}
-            (dark desk + order-ticket adjacent) — not TradingView branding.
-            Forming + projected next 5m bars update each poll. Not investment advice.
+            Source: {snapshot.source}. Live mark from Yahoo{' '}
+            <code className="text-[var(--tvate-text)]">regularMarketPrice</code>{' '}
+            @ source time; poll every {pollMs / 1000}s. CME via Yahoo is often
+            delayed vs Tradovate/CME direct — age shown above. Bid/ask not
+            available on this free path. Tradovate-style chrome only. Not advice.
             {error ? ` · refresh warn: ${error}` : ''}
           </footer>
         </>
