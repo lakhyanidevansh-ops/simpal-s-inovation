@@ -1,5 +1,10 @@
 import { computeIndicators, type IndicatorBundle } from './indicators'
 import type { StrategyId } from './liveLearner'
+import {
+  detectPatterns,
+  scorePatterns,
+  type PatternHit,
+} from './priceActionPatterns'
 import type { Bias, Candle } from './types'
 
 export type StrategySignal = {
@@ -237,6 +242,57 @@ export function runMomentum(t: Tape): StrategySignal {
   }
 }
 
+/** Wick rejection / engulfing / body dominance — pure price action. */
+export function runPriceAction(
+  candles: Candle[],
+  _t: Tape,
+): StrategySignal {
+  const hits = detectPatterns(candles).filter((h) =>
+    [
+      'Pin bar / hammer',
+      'Shooting star',
+      'Bullish engulfing',
+      'Bearish engulfing',
+      'Bull outside bar',
+      'Bear outside bar',
+      'Bull marubozu',
+      'Bear marubozu',
+      'Morning star-ish',
+      'Evening star-ish',
+    ].includes(h.name) || h.name.includes('-bar bull') || h.name.includes('-bar bear'),
+  )
+  const { score, bias, summary } = scorePatterns(hits)
+  return {
+    id: 'priceAction',
+    bias,
+    score,
+    reason: summary,
+  }
+}
+
+/** Structure + double top/bottom + inside/outside compression patterns. */
+export function runChartPattern(candles: Candle[]): StrategySignal {
+  const hits = detectPatterns(candles).filter((h) =>
+    [
+      'HH + HL structure',
+      'LH + LL structure',
+      'Micro double top',
+      'Micro double bottom',
+      'Inside bar',
+      'Doji',
+      'Morning star-ish',
+      'Evening star-ish',
+    ].includes(h.name),
+  )
+  const { score, bias, summary } = scorePatterns(hits)
+  return {
+    id: 'chartPattern',
+    bias,
+    score: score * 0.95,
+    reason: summary,
+  }
+}
+
 /** Dedicated MACD histogram / cross strategy. */
 export function runMacdFlow(t: Tape): StrategySignal {
   let score = 0
@@ -275,12 +331,17 @@ export function runMacdFlow(t: Tape): StrategySignal {
 
 export function runAllStrategies(candles: Candle[], lastClose: number) {
   const t = tapeFeatures(candles, lastClose)
+  const patternHits = detectPatterns(candles)
   const signals = [
     runTrend(t),
     runMeanRevert(t),
     runBreakout(t),
     runMomentum(t),
     runMacdFlow(t),
+    runPriceAction(candles, t),
+    runChartPattern(candles),
   ]
-  return { tape: t, signals }
+  return { tape: t, signals, patternHits }
 }
+
+export type { PatternHit }

@@ -305,6 +305,7 @@ export function analyzeTwoCandles(
         maxMovePct: MAX_MOVE_PCT * 100,
         learningSample: 0,
         strategies: [],
+        patterns: [],
       },
     }
   }
@@ -324,10 +325,12 @@ export function analyzeTwoCandles(
     breakout: learner.strategies.breakout.weight,
     momentum: learner.strategies.momentum.weight,
     macdFlow: learner.strategies.macdFlow.weight,
+    priceAction: learner.strategies.priceAction.weight,
+    chartPattern: learner.strategies.chartPattern.weight,
   }
   const hitRate = voteHitRate(learner)
 
-  const { tape, signals } = runAllStrategies(series, last.close)
+  const { tape, signals, patternHits } = runAllStrategies(series, last.close)
   const v1 = voteStrategies(signals, weights, 1)
   // Calibrate confidence with live learner
   if (learner.sample >= 8 && hitRate < 0.48) v1.confidence = 'low'
@@ -367,11 +370,18 @@ export function analyzeTwoCandles(
     horizon: 2,
   })
 
+  const patternNote =
+    patternHits
+      .filter((h) => h.bias === v1.bias || h.bias === 'neutral')
+      .slice(0, 2)
+      .map((h) => h.name)
+      .join(' · ') || v1.structure
+
   const plus1 = buildCall({
     bias: v1.bias,
     score: v1.score,
     confidence: v1.confidence,
-    structure: v1.structure,
+    structure: patternNote,
     lastClose: last.close,
     projected: p1,
     atrVal: tape.atr14,
@@ -416,6 +426,12 @@ export function analyzeTwoCandles(
       maxMovePct: MAX_MOVE_PCT * 100,
       learningSample: learner.sample,
       strategies: v1.snapshots,
+      patterns: patternHits.slice(0, 6).map((h) => ({
+        name: h.name,
+        bias: h.bias,
+        detail: h.detail,
+        strength: h.strength,
+      })),
     },
   }
 }
@@ -432,5 +448,8 @@ export function strategyBiasesAt(
     breakout: signals.find((s) => s.id === 'breakout')?.bias ?? 'neutral',
     momentum: signals.find((s) => s.id === 'momentum')?.bias ?? 'neutral',
     macdFlow: signals.find((s) => s.id === 'macdFlow')?.bias ?? 'neutral',
+    priceAction: signals.find((s) => s.id === 'priceAction')?.bias ?? 'neutral',
+    chartPattern:
+      signals.find((s) => s.id === 'chartPattern')?.bias ?? 'neutral',
   }
 }

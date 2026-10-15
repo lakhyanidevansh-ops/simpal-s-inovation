@@ -89,6 +89,8 @@ export type DualCandleSuggestions = {
     maxMovePct: number
     learningSample: number
     strategies: StrategySnapshot[]
+    /** Live-detected chart / price-action patterns */
+    patterns: { name: string; bias: Bias; detail: string; strength: number }[]
   }
 }
 

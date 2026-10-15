@@ -30,7 +30,9 @@ Installed for stronger live signals (still near-price caps ~0.12%):
 - `technicalindicators` — EMA, ATR, RSI, MACD, Bollinger, Stochastic, ADX
 - `simple-statistics` — return z-scores for momentum
 
-Five strategies vote and reweight as each 5m bar closes (browser localStorage).
+Seven strategies vote and reweight as each 5m bar closes (browser localStorage):
+trend, mean-revert, breakout, momentum, MACD, **price action**, **chart patterns**
+(engulfing, pin/hammer, stars, HH/HL, micro double top/bottom, inside/outside bars).
 
 ## Deploy on Netlify
 

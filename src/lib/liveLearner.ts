@@ -6,12 +6,13 @@ export type StrategyId =
   | 'breakout'
   | 'momentum'
   | 'macdFlow'
+  | 'priceAction'
+  | 'chartPattern'
 
 export type StrategyStats = {
   id: StrategyId
   hits: number
   misses: number
-  /** Adaptive weight 0.35–1.8 from live outcomes */
   weight: number
 }
 
@@ -19,18 +20,19 @@ export type LearnerState = {
   updatedAt: number
   sample: number
   strategies: Record<StrategyId, StrategyStats>
-  /** Rolling direction hits for the voted call */
   voteHits: number
   voteMisses: number
 }
 
-const STORAGE_KEY = 'nqz6.liveLearner.v2'
+const STORAGE_KEY = 'nqz6.liveLearner.v3'
 const IDS: StrategyId[] = [
   'trend',
   'meanRevert',
   'breakout',
   'momentum',
   'macdFlow',
+  'priceAction',
+  'chartPattern',
 ]
 
 function defaultState(): LearnerState {
@@ -83,7 +85,7 @@ export function saveLearner(state: LearnerState) {
       JSON.stringify({ ...state, updatedAt: Date.now() }),
     )
   } catch {
-    /* quota / private mode */
+    /* ignore */
   }
 }
 
@@ -134,8 +136,12 @@ export function strategyLabel(id: StrategyId): string {
     case 'breakout':
       return 'Breakout'
     case 'momentum':
-      return 'Momentum (Z/Stoch)'
+      return 'Momentum'
     case 'macdFlow':
       return 'MACD flow'
+    case 'priceAction':
+      return 'Price action'
+    case 'chartPattern':
+      return 'Chart patterns'
   }
 }

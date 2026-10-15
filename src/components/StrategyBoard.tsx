@@ -15,26 +15,52 @@ export function StrategyBoard({ suggestions }: Props) {
   const rows = model.strategies?.length
     ? model.strategies
     : suggestions.plus1.strategies
+  const patterns = model.patterns ?? []
 
   return (
     <div className="border-b border-[var(--tvate-border)] bg-[var(--tvate-panel-2)] px-3 py-2">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--tvate-muted)]">
-          Live strategies · learning
+          Live learn · patterns · price action · momentum
         </div>
         <div className="font-mono text-[10px] text-[var(--tvate-muted)]">
           vote hit {Math.round(model.recentHitRate * 100)}% · n=
-          {model.learningSample} · move cap {model.maxMovePct.toFixed(2)}%
+          {model.learningSample} · cap {model.maxMovePct.toFixed(2)}%
         </div>
       </div>
-      <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-5">
+
+      {patterns.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {patterns.map((p) => (
+            <span
+              key={`${p.name}-${p.detail}`}
+              className="rounded border px-2 py-0.5 font-mono text-[10px]"
+              style={{
+                borderColor: biasColor(p.bias),
+                color: biasColor(p.bias),
+                background: 'rgba(0,0,0,0.25)',
+              }}
+              title={p.detail}
+            >
+              {p.name}
+              <span className="ml-1 text-[var(--tvate-muted)]">
+                ·{p.strength}
+              </span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-7">
         {rows.map((s) => (
           <div
             key={s.id}
             className="rounded border px-2 py-1.5"
             style={{
               borderColor: s.active ? biasColor(s.bias) : 'var(--tvate-border)',
-              background: s.active ? 'rgba(61,139,253,0.08)' : 'rgba(0,0,0,0.2)',
+              background: s.active
+                ? 'rgba(61,139,253,0.08)'
+                : 'rgba(0,0,0,0.2)',
             }}
           >
             <div className="flex items-center justify-between gap-1">
@@ -50,7 +76,7 @@ export function StrategyBoard({ suggestions }: Props) {
               </span>
             </div>
             <div className="mt-0.5 font-mono text-[10px] text-[var(--tvate-muted)]">
-              w {s.weight.toFixed(2)} · score {s.score > 0 ? '+' : ''}
+              w {s.weight.toFixed(2)} · {s.score > 0 ? '+' : ''}
               {s.score}
             </div>
             <div className="mt-0.5 text-[10px] leading-snug text-[var(--tvate-muted)]">
@@ -60,10 +86,13 @@ export function StrategyBoard({ suggestions }: Props) {
         ))}
       </div>
       <p className="mt-2 text-[10px] text-[var(--tvate-muted)]">
-        Primary: <strong className="text-[var(--tvate-text)]">{suggestions.plus1.activeStrategy}</strong>
+        Primary:{' '}
+        <strong className="text-[var(--tvate-text)]">
+          {suggestions.plus1.activeStrategy}
+        </strong>
         {' · '}
-        Targets stay within ~{model.maxMovePct.toFixed(2)}% of mark (ATR-scaled). Weights
-        update as each 5m bar closes.
+        Reads chart patterns, price action, momentum, MACD, BB/RSI, ADX — then
+        votes a near-price +1/+2 call. Learns as bars close.
       </p>
     </div>
   )
