@@ -23,6 +23,15 @@ npm run dev
 
 Open **http://127.0.0.1:4317**
 
+## Accuracy stack (extra packages)
+
+Installed for stronger live signals (still near-price caps ~0.12%):
+
+- `technicalindicators` — EMA, ATR, RSI, MACD, Bollinger, Stochastic, ADX
+- `simple-statistics` — return z-scores for momentum
+
+Five strategies vote and reweight as each 5m bar closes (browser localStorage).
+
 ## Deploy on Netlify
 
 This repo is calibrated for Netlify static + functions:

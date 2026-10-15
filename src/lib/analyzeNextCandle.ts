@@ -323,6 +323,7 @@ export function analyzeTwoCandles(
     meanRevert: learner.strategies.meanRevert.weight,
     breakout: learner.strategies.breakout.weight,
     momentum: learner.strategies.momentum.weight,
+    macdFlow: learner.strategies.macdFlow.weight,
   }
   const hitRate = voteHitRate(learner)
 
@@ -336,7 +337,7 @@ export function analyzeTwoCandles(
   const p1 = projectNear({
     open: last.close,
     bias: v1.bias,
-    atrVal: tape.atrVal,
+    atrVal: tape.atr14,
     score: v1.score,
     confidence: v1.confidence,
     horizon: 1,
@@ -360,7 +361,7 @@ export function analyzeTwoCandles(
   const p2 = projectNear({
     open: p1.close,
     bias: v2.bias,
-    atrVal: tape2.atrVal,
+    atrVal: tape2.atr14,
     score: v2.score,
     confidence: v2.confidence,
     horizon: 2,
@@ -373,7 +374,7 @@ export function analyzeTwoCandles(
     structure: v1.structure,
     lastClose: last.close,
     projected: p1,
-    atrVal: tape.atrVal,
+    atrVal: tape.atr14,
     ema9: tape.ema9,
     ema21: tape.ema21,
     microHigh: tape.microHigh,
@@ -392,7 +393,7 @@ export function analyzeTwoCandles(
     structure: v2.structure,
     lastClose: p1.close,
     projected: p2,
-    atrVal: tape2.atrVal,
+    atrVal: tape2.atr14,
     ema9: tape2.ema9,
     ema21: tape2.ema21,
     microHigh: tape2.microHigh,
@@ -409,7 +410,7 @@ export function analyzeTwoCandles(
     plus2,
     primary: plus1,
     model: {
-      atr: round2(tape.atrVal),
+      atr: round2(tape.atr14),
       recentHitRate: round2(hitRate * 100) / 100,
       sampleSize: learner.voteHits + learner.voteMisses,
       maxMovePct: MAX_MOVE_PCT * 100,
@@ -430,5 +431,6 @@ export function strategyBiasesAt(
     meanRevert: signals.find((s) => s.id === 'meanRevert')?.bias ?? 'neutral',
     breakout: signals.find((s) => s.id === 'breakout')?.bias ?? 'neutral',
     momentum: signals.find((s) => s.id === 'momentum')?.bias ?? 'neutral',
+    macdFlow: signals.find((s) => s.id === 'macdFlow')?.bias ?? 'neutral',
   }
 }

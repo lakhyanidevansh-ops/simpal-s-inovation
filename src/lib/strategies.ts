@@ -1,55 +1,12 @@
-import type { Bias, Candle } from './types'
+import { computeIndicators, type IndicatorBundle } from './indicators'
 import type { StrategyId } from './liveLearner'
+import type { Bias, Candle } from './types'
 
 export type StrategySignal = {
   id: StrategyId
   bias: Bias
-  /** −100…+100 raw conviction before learner weight */
   score: number
   reason: string
-}
-
-function ema(values: number[], period: number): number[] {
-  if (!values.length) return []
-  const k = 2 / (period + 1)
-  let prev = values[0]
-  const out = [prev]
-  for (let i = 1; i < values.length; i++) {
-    prev = values[i] * k + prev * (1 - k)
-    out.push(prev)
-  }
-  return out
-}
-
-function atr(candles: Candle[], period = 14): number {
-  if (candles.length < 2) return 1
-  const trs: number[] = []
-  for (let i = 1; i < candles.length; i++) {
-    const c = candles[i]
-    const p = candles[i - 1]
-    trs.push(
-      Math.max(
-        c.high - c.low,
-        Math.abs(c.high - p.close),
-        Math.abs(c.low - p.close),
-      ),
-    )
-  }
-  const slice = trs.slice(-period)
-  return slice.reduce((a, b) => a + b, 0) / Math.max(1, slice.length)
-}
-
-function rsi(closes: number[], period = 14): number {
-  if (closes.length < period + 1) return 50
-  let gains = 0
-  let losses = 0
-  for (let i = closes.length - period; i < closes.length; i++) {
-    const d = closes[i] - closes[i - 1]
-    if (d >= 0) gains += d
-    else losses -= d
-  }
-  if (losses === 0) return 100
-  return 100 - 100 / (1 + gains / losses)
 }
 
 function biasFromScore(score: number, thresh = 18): Bias {
@@ -58,24 +15,29 @@ function biasFromScore(score: number, thresh = 18): Bias {
   return 'neutral'
 }
 
-/** Shared tape features for all strategies (near-price only). */
-export function tapeFeatures(candles: Candle[], lastClose: number) {
-  const closes = candles.map((c) => c.close)
-  closes[closes.length - 1] = lastClose
-  const e9 = ema(closes, 9)
-  const e21 = ema(closes, 21)
-  const ema9 = e9[e9.length - 1]
-  const ema21 = e21[e21.length - 1]
-  const ema9Prev = e9[Math.max(0, e9.length - 4)]
-  const atrVal = atr(candles)
-  const rsi14 = rsi(closes, 14)
-  const last = { ...candles[candles.length - 1], close: lastClose }
+export type Tape = IndicatorBundle & {
+  lastClose: number
+  microHigh: number
+  microLow: number
+  mid: number
+  mom3: number
+  mom6: number
+  closeLoc: number
+  volRatio: number
+  last: Candle
+}
+
+export function tapeFeatures(candles: Candle[], lastClose: number): Tape {
+  const ind = computeIndicators(candles, lastClose)
+  const last = { ...candles[candles.length - 1]!, close: lastClose }
+  last.high = Math.max(last.high, lastClose)
+  last.low = Math.min(last.low, lastClose)
   const micro = candles.slice(-8)
-  const microHigh = Math.max(...micro.map((c) => c.high))
-  const microLow = Math.min(...micro.map((c) => c.low))
+  const microHigh = Math.max(...micro.map((c) => c.high), lastClose)
+  const microLow = Math.min(...micro.map((c) => c.low), lastClose)
   const mid = (microHigh + microLow) / 2
-  const mom3 = lastClose - candles[Math.max(0, candles.length - 4)].close
-  const mom6 = lastClose - candles[Math.max(0, candles.length - 7)].close
+  const mom3 = lastClose - candles[Math.max(0, candles.length - 4)]!.close
+  const mom6 = lastClose - candles[Math.max(0, candles.length - 7)]!.close
   const range = Math.max(1e-9, last.high - last.low)
   const closeLoc = (last.close - last.low) / range
   const vols = candles.slice(-16).map((c) => c.volume)
@@ -83,12 +45,8 @@ export function tapeFeatures(candles: Candle[], lastClose: number) {
   const volRatio = avgVol > 0 ? last.volume / avgVol : 1
 
   return {
+    ...ind,
     lastClose,
-    ema9,
-    ema21,
-    ema9Slope: ema9 - ema9Prev,
-    atrVal,
-    rsi14,
     microHigh,
     microLow,
     mid,
@@ -100,98 +58,129 @@ export function tapeFeatures(candles: Candle[], lastClose: number) {
   }
 }
 
-export type Tape = ReturnType<typeof tapeFeatures>
-
+/** EMA stack + ADX trend strength (library ATR/ADX/EMA). */
 export function runTrend(t: Tape): StrategySignal {
   let score = 0
   const bits: string[] = []
-  if (t.lastClose > t.ema9 && t.ema9 > t.ema21) {
-    score += 28
+
+  if (t.lastClose > t.ema9 && t.ema9 > t.ema21 && t.ema21 > t.ema50) {
+    score += 30
+    bits.push('EMA 9>21>50')
+  } else if (t.lastClose < t.ema9 && t.ema9 < t.ema21 && t.ema21 < t.ema50) {
+    score -= 30
+    bits.push('EMA 9<21<50')
+  } else if (t.lastClose > t.ema9 && t.ema9 > t.ema21) {
+    score += 18
     bits.push('EMA stack↑')
   } else if (t.lastClose < t.ema9 && t.ema9 < t.ema21) {
-    score -= 28
+    score -= 18
     bits.push('EMA stack↓')
   }
-  if (t.ema9Slope > t.atrVal * 0.04) {
-    score += 14
-    bits.push('EMA9 rising')
-  } else if (t.ema9Slope < -t.atrVal * 0.04) {
-    score -= 14
-    bits.push('EMA9 falling')
+
+  if (t.adx >= 22) {
+    if (t.plusDI > t.minusDI) {
+      score += 14
+      bits.push(`ADX ${t.adx.toFixed(0)} +DI`)
+    } else if (t.minusDI > t.plusDI) {
+      score -= 14
+      bits.push(`ADX ${t.adx.toFixed(0)} -DI`)
+    }
+  } else {
+    score *= 0.55
+    bits.push('weak ADX')
   }
-  // Stay near price — fade if already stretched > 0.7 micro range
-  const stretch = (t.lastClose - t.mid) / Math.max(t.atrVal, t.microHigh - t.microLow)
+
+  const stretch =
+    (t.lastClose - t.mid) / Math.max(t.atr14, t.microHigh - t.microLow)
   if (score > 0 && stretch > 0.75) {
     score *= 0.35
-    bits.push('trim chase')
+    bits.push('no chase')
   }
   if (score < 0 && stretch < -0.75) {
     score *= 0.35
-    bits.push('trim chase')
+    bits.push('no chase')
   }
+
   return {
     id: 'trend',
     bias: biasFromScore(score),
     score,
-    reason: bits.join(' · ') || 'flat stack',
+    reason: bits.join(' · ') || 'flat trend',
   }
 }
 
+/** Bollinger %B + RSI mean reversion (library). */
 export function runMeanRevert(t: Tape): StrategySignal {
   let score = 0
   const bits: string[] = []
-  const stretch =
-    (t.lastClose - t.mid) / Math.max(t.atrVal * 0.8, (t.microHigh - t.microLow) * 0.5)
-  if (stretch > 0.9 || t.rsi14 > 68) {
-    score -= 26
-    bits.push('fade stretch high')
-  } else if (stretch < -0.9 || t.rsi14 < 32) {
-    score += 26
-    bits.push('fade stretch low')
-  }
-  // Wick rejection near extremes
-  if (t.closeLoc < 0.28 && t.last.close > t.last.open) {
+
+  if (t.bbPctB >= 0.95 || t.rsi14 > 70) {
+    score -= 28
+    bits.push(`fade BB/RSI high (${t.rsi14.toFixed(0)})`)
+  } else if (t.bbPctB <= 0.05 || t.rsi14 < 30) {
+    score += 28
+    bits.push(`fade BB/RSI low (${t.rsi14.toFixed(0)})`)
+  } else if (t.bbPctB > 0.75 && t.rsi14 > 60) {
+    score -= 12
+    bits.push('upper band')
+  } else if (t.bbPctB < 0.25 && t.rsi14 < 40) {
     score += 12
+    bits.push('lower band')
+  }
+
+  if (t.closeLoc < 0.28 && t.last.close > t.last.open) {
+    score += 10
     bits.push('lower reject')
   }
   if (t.closeLoc > 0.72 && t.last.close < t.last.open) {
-    score -= 12
+    score -= 10
     bits.push('upper reject')
   }
-  // Don't mean-revert hard against strong EMA slope
-  if (Math.abs(t.ema9Slope) > t.atrVal * 0.12) {
+
+  // Don't fight strong ADX trends
+  if (t.adx > 28) {
     score *= 0.4
-    bits.push('trend damp')
+    bits.push('ADX damp')
   }
+
   return {
     id: 'meanRevert',
     bias: biasFromScore(score, 16),
     score,
-    reason: bits.join(' · ') || 'mid-range',
+    reason: bits.join(' · ') || 'mid BB',
   }
 }
 
 export function runBreakout(t: Tape): StrategySignal {
   let score = 0
   const bits: string[] = []
-  const nearHigh = t.lastClose >= t.microHigh - t.atrVal * 0.15
-  const nearLow = t.lastClose <= t.microLow + t.atrVal * 0.15
-  if (nearHigh && t.volRatio > 1.15 && t.mom3 > 0) {
-    score += 24
-    bits.push('probe micro high')
-  } else if (nearLow && t.volRatio > 1.15 && t.mom3 < 0) {
-    score -= 24
-    bits.push('probe micro low')
+  const nearHigh = t.lastClose >= t.microHigh - t.atr14 * 0.12
+  const nearLow = t.lastClose <= t.microLow + t.atr14 * 0.12
+
+  if (nearHigh && t.volRatio > 1.12 && t.macdHist > 0) {
+    score += 22
+    bits.push('high + MACD↑')
+  } else if (nearLow && t.volRatio > 1.12 && t.macdHist < 0) {
+    score -= 22
+    bits.push('low + MACD↓')
   }
-  // Failed break → reverse lean
+
   if (nearHigh && t.closeLoc < 0.4 && t.last.close < t.last.open) {
-    score -= 18
+    score -= 16
     bits.push('failed high')
   }
   if (nearLow && t.closeLoc > 0.6 && t.last.close > t.last.open) {
-    score += 18
+    score += 16
     bits.push('failed low')
   }
+
+  // Squeeze: BB width tight relative to ATR → breakout preference
+  const bbWidth = (t.bbUpper - t.bbLower) / Math.max(1e-9, t.bbMiddle)
+  if (bbWidth < t.atrPct / 100 * 1.2 && Math.abs(t.mom3) > t.atr14 * 0.12) {
+    score += t.mom3 > 0 ? 10 : -10
+    bits.push('BB squeeze')
+  }
+
   return {
     id: 'breakout',
     bias: biasFromScore(score, 16),
@@ -200,36 +189,87 @@ export function runBreakout(t: Tape): StrategySignal {
   }
 }
 
+/** Stochastic + return z-score momentum. */
 export function runMomentum(t: Tape): StrategySignal {
   let score = 0
   const bits: string[] = []
+
+  if (t.returnZ > 1.1) {
+    score += 18
+    bits.push(`z ${t.returnZ.toFixed(1)}`)
+  } else if (t.returnZ < -1.1) {
+    score -= 18
+    bits.push(`z ${t.returnZ.toFixed(1)}`)
+  }
+
+  if (t.stochK > 80 && t.stochK > t.stochD) {
+    score -= 12
+    bits.push('stoch OB')
+  } else if (t.stochK < 20 && t.stochK < t.stochD) {
+    score += 12
+    bits.push('stoch OS')
+  } else if (t.stochK > t.stochD && t.stochK > 50) {
+    score += 8
+    bits.push('stoch↑')
+  } else if (t.stochK < t.stochD && t.stochK < 50) {
+    score -= 8
+    bits.push('stoch↓')
+  }
+
   if (t.mom3 > 0 && t.mom6 > 0) {
-    score += 22
+    score += 12
     bits.push('2-leg↑')
   } else if (t.mom3 < 0 && t.mom6 < 0) {
-    score -= 22
+    score -= 12
     bits.push('2-leg↓')
-  } else if (t.mom3 > t.atrVal * 0.15) {
-    score += 10
-    bits.push('short↑')
-  } else if (t.mom3 < -t.atrVal * 0.15) {
-    score -= 10
-    bits.push('short↓')
   }
-  if (t.volRatio > 1.3) {
-    score *= 1.15
-    bits.push('vol confirm')
-  }
-  // Cap chase: if move already > 0.55 ATR in 3 bars, fade half
-  if (Math.abs(t.mom3) > t.atrVal * 0.55) {
+
+  if (Math.abs(t.mom3) > t.atr14 * 0.55) {
     score *= 0.5
     bits.push('exhaust')
   }
+
   return {
     id: 'momentum',
     bias: biasFromScore(score, 14),
     score,
     reason: bits.join(' · ') || 'quiet mom',
+  }
+}
+
+/** Dedicated MACD histogram / cross strategy. */
+export function runMacdFlow(t: Tape): StrategySignal {
+  let score = 0
+  const bits: string[] = []
+
+  if (t.macdHist > 0 && t.macd > t.macdSignal) {
+    score += 22
+    bits.push('MACD hist+')
+  } else if (t.macdHist < 0 && t.macd < t.macdSignal) {
+    score -= 22
+    bits.push('MACD hist-')
+  }
+
+  // Zero-line context
+  if (t.macd > 0 && t.macdHist > 0) {
+    score += 8
+    bits.push('above zero')
+  } else if (t.macd < 0 && t.macdHist < 0) {
+    score -= 8
+    bits.push('below zero')
+  }
+
+  // Histogram shrinking = loss of momentum
+  if (Math.abs(t.macdHist) < t.atr14 * 0.02 && t.adx < 18) {
+    score *= 0.5
+    bits.push('flat hist')
+  }
+
+  return {
+    id: 'macdFlow',
+    bias: biasFromScore(score, 14),
+    score,
+    reason: bits.join(' · ') || 'MACD quiet',
   }
 }
 
@@ -240,6 +280,7 @@ export function runAllStrategies(candles: Candle[], lastClose: number) {
     runMeanRevert(t),
     runBreakout(t),
     runMomentum(t),
+    runMacdFlow(t),
   ]
   return { tape: t, signals }
 }

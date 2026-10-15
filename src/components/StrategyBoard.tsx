@@ -27,7 +27,7 @@ export function StrategyBoard({ suggestions }: Props) {
           {model.learningSample} · move cap {model.maxMovePct.toFixed(2)}%
         </div>
       </div>
-      <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-4">
+      <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-5">
         {rows.map((s) => (
           <div
             key={s.id}

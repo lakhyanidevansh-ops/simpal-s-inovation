@@ -5,6 +5,7 @@ export type StrategyId =
   | 'meanRevert'
   | 'breakout'
   | 'momentum'
+  | 'macdFlow'
 
 export type StrategyStats = {
   id: StrategyId
@@ -23,8 +24,14 @@ export type LearnerState = {
   voteMisses: number
 }
 
-const STORAGE_KEY = 'nqz6.liveLearner.v1'
-const IDS: StrategyId[] = ['trend', 'meanRevert', 'breakout', 'momentum']
+const STORAGE_KEY = 'nqz6.liveLearner.v2'
+const IDS: StrategyId[] = [
+  'trend',
+  'meanRevert',
+  'breakout',
+  'momentum',
+  'macdFlow',
+]
 
 function defaultState(): LearnerState {
   const strategies = {} as Record<StrategyId, StrategyStats>
@@ -44,7 +51,6 @@ function reweight(s: StrategyStats): StrategyStats {
   const n = s.hits + s.misses
   if (n < 4) return { ...s, weight: 1 }
   const rate = s.hits / n
-  // Map 35%–70% hit-rate → weight 0.45–1.7
   const weight = Math.max(0.35, Math.min(1.8, 0.45 + (rate - 0.35) * 3.5))
   return { ...s, weight }
 }
@@ -86,10 +92,6 @@ export function voteHitRate(state: LearnerState): number {
   return n ? state.voteHits / n : 0.5
 }
 
-/**
- * Record outcomes after a bar closes: each strategy's predicted bias vs
- * actual bar direction, plus the voted call.
- */
 export function recordBarOutcome(args: {
   state: LearnerState
   strategyBias: Record<StrategyId, Bias>
@@ -126,12 +128,14 @@ export function recordBarOutcome(args: {
 export function strategyLabel(id: StrategyId): string {
   switch (id) {
     case 'trend':
-      return 'Trend follow'
+      return 'Trend (EMA/ADX)'
     case 'meanRevert':
-      return 'Mean revert'
+      return 'Mean revert (BB/RSI)'
     case 'breakout':
       return 'Breakout'
     case 'momentum':
-      return 'Momentum'
+      return 'Momentum (Z/Stoch)'
+    case 'macdFlow':
+      return 'MACD flow'
   }
 }
