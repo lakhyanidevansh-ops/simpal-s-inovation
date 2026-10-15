@@ -1,8 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
-import { analyzeTwoCandles } from '../lib/analyzeNextCandle'
+import {
+  analyzeTwoCandles,
+  strategyBiasesAt,
+} from '../lib/analyzeNextCandle'
 import { fetchMark, fetchNqz6Snapshot } from '../lib/fetchNqz6'
+import {
+  loadLearner,
+  recordBarOutcome,
+  type LearnerState,
+} from '../lib/liveLearner'
 import { patchFormingFromMark } from '../lib/normalizeCandles'
-import type { DualCandleSuggestions, MarkPrint, MarketSnapshot } from '../lib/types'
+import type {
+  Bias,
+  DualCandleSuggestions,
+  MarkPrint,
+  MarketSnapshot,
+} from '../lib/types'
 
 /** Structure refresh (5m bars). */
 const STRUCTURE_POLL_MS = 15_000
@@ -50,10 +63,59 @@ export function useLiveNqz6(): LiveState {
   const lastPriceRef = useRef<number | null>(null)
   const flashTimer = useRef<number | null>(null)
   const snapshotRef = useRef<MarketSnapshot | null>(null)
+  const learnerRef = useRef<LearnerState>(loadLearner())
+  /** Last closed bar open we already scored for learning */
+  const learnedBarRef = useRef<number | null>(null)
+  /** Pending vote from previous closed bar, checked when next bar closes */
+  const pendingVoteRef = useRef<{
+    barOpen: number
+    votedBias: Bias
+    strategyBias: ReturnType<typeof strategyBiasesAt>
+  } | null>(null)
 
   useEffect(() => {
     snapshotRef.current = snapshot
   }, [snapshot])
+
+  /** Learn from each newly closed 5m bar — reweights strategies live. */
+  const learnFromCandles = (candles: MarketSnapshot['candles']) => {
+    const closed = candles.filter((c) => !c.forming)
+    if (closed.length < 32) return
+    const prev = closed[closed.length - 2]
+    const lastClosed = closed[closed.length - 1]
+    if (!prev || !lastClosed) return
+
+    // When a new bar appears, grade the prediction made at the prior close
+    if (
+      learnedBarRef.current != null &&
+      lastClosed.time > learnedBarRef.current &&
+      pendingVoteRef.current &&
+      pendingVoteRef.current.barOpen === learnedBarRef.current
+    ) {
+      const actual =
+        lastClosed.close > lastClosed.open
+          ? 'up'
+          : lastClosed.close < lastClosed.open
+            ? 'down'
+            : 'flat'
+      learnerRef.current = recordBarOutcome({
+        state: learnerRef.current,
+        strategyBias: pendingVoteRef.current.strategyBias,
+        votedBias: pendingVoteRef.current.votedBias,
+        actual,
+      })
+    }
+
+    if (learnedBarRef.current === lastClosed.time) return
+    learnedBarRef.current = lastClosed.time
+    const hist = closed.slice(0, -1)
+    const dual = analyzeTwoCandles(hist, lastClosed.open)
+    pendingVoteRef.current = {
+      barOpen: lastClosed.time,
+      votedBias: dual.plus1.bias,
+      strategyBias: strategyBiasesAt(hist, lastClosed.open),
+    }
+  }
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 250)
@@ -222,6 +284,7 @@ export function useLiveNqz6(): LiveState {
             : next
 
         lastPriceRef.current = merged.livePrice
+        learnFromCandles(merged.candles)
         setSnapshot(merged)
         setSuggestions(analyzeTwoCandles(merged.candles, merged.livePrice))
         setFeedMode(merged.mark.feedMode ?? null)

@@ -4,6 +4,7 @@ import { KeyLevels } from './components/KeyLevels'
 import { LivePriceStrip } from './components/LivePriceStrip'
 import { OrderTicketPanel } from './components/OrderTicketPanel'
 import { RecentCandles } from './components/RecentCandles'
+import { StrategyBoard } from './components/StrategyBoard'
 import { TradovateGate } from './components/TradovateGate'
 import { useLiveNqz6 } from './hooks/useLiveNqz6'
 
@@ -126,6 +127,7 @@ export default function App() {
 
       {live && snapshot && suggestions && suggestion && (
         <>
+          <StrategyBoard suggestions={suggestions} />
           <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px]">
             <div className="min-h-[460px] border-b border-[var(--tvate-border)] lg:border-b-0">
               <CandleChart

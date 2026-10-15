@@ -38,8 +38,7 @@ function HorizonCard({
           {s.bias}
         </div>
         <div className="font-mono text-[10px] text-[var(--tvate-muted)]">
-          score {s.score > 0 ? '+' : ''}
-          {s.score} · {s.confidence}
+          {s.activeStrategy}
         </div>
       </div>
       <p className="mt-0.5 font-mono text-[10px] leading-snug text-[var(--tvate-text)]">
@@ -52,28 +51,24 @@ function HorizonCard({
             {p.close.toFixed(2)}
             <span className="ml-1 text-[var(--tvate-muted)]">
               ({p.movePct >= 0 ? '+' : ''}
-              {p.movePct.toFixed(2)}%)
+              {p.movePct.toFixed(3)}%)
             </span>
           </dd>
         </div>
         <div className="flex justify-between gap-2">
-          <dt className="text-[var(--tvate-muted)]">Band ±</dt>
-          <dd className="font-mono text-right">{p.bandPct.toFixed(2)}%</dd>
-        </div>
-        <div className="flex justify-between gap-2">
-          <dt className="text-[var(--tvate-muted)]">H / L</dt>
+          <dt className="text-[var(--tvate-muted)]">Near H/L</dt>
           <dd className="font-mono text-right">
             {p.high.toFixed(2)} / {p.low.toFixed(2)}
           </dd>
         </div>
         <div className="flex justify-between gap-2">
-          <dt className="text-[var(--tvate-muted)]">Inv</dt>
+          <dt className="text-[var(--tvate-muted)]">Tight inv</dt>
           <dd className="font-mono text-right">{s.invalidation.toFixed(2)}</dd>
         </div>
         <div className="flex justify-between gap-2">
-          <dt className="text-[var(--tvate-muted)]">Hit rate</dt>
+          <dt className="text-[var(--tvate-muted)]">Live hit</dt>
           <dd className="font-mono text-right">
-            {Math.round(s.recentHitRate * 100)}%
+            {Math.round(s.recentHitRate * 100)}% · {s.confidence}
           </dd>
         </div>
       </dl>
@@ -92,7 +87,7 @@ export function OrderTicketPanel({ suggestions, lastPrice, symbol }: Props) {
     <aside className="flex h-full min-h-[460px] w-full flex-col border-l border-[var(--tvate-border)] bg-[var(--tvate-panel)]">
       <div className="border-b border-[var(--tvate-border)] px-3 py-2">
         <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--tvate-muted)]">
-          Order ticket · calibrated +1 / +2
+          Live ticket · near-price +1 / +2
         </div>
         <div className="mt-1 flex items-baseline justify-between gap-2">
           <span className="font-mono text-sm font-semibold">{symbol}</span>
@@ -100,13 +95,10 @@ export function OrderTicketPanel({ suggestions, lastPrice, symbol }: Props) {
             {lastPrice.toFixed(2)}
           </span>
         </div>
-        {model && (
-          <div className="mt-1 font-mono text-[10px] text-[var(--tvate-muted)]">
-            ATR {model.atr.toFixed(2)} · WF hit{' '}
-            {Math.round(model.recentHitRate * 100)}% (n={model.sampleSize}) ·
-            move cap {model.maxMovePct}%
-          </div>
-        )}
+        <div className="mt-1 font-mono text-[10px] text-[var(--tvate-muted)]">
+          ATR {model.atr.toFixed(2)} · learn n={model.learningSample} · cap{' '}
+          {model.maxMovePct.toFixed(2)}%
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-2 border-b border-[var(--tvate-border)] p-3">
@@ -140,8 +132,8 @@ export function OrderTicketPanel({ suggestions, lastPrice, symbol }: Props) {
       </div>
 
       <div className="mt-auto border-t border-[var(--tvate-border)] p-3 text-[10px] text-[var(--tvate-muted)]">
-        Projected OHLC is ATR-sized and capped at 1% of price. Hit-rate is
-        walk-forward on recent closed 5m bars (direction only) — not a guarantee.
+        Suggestions stay near the mark (≤{model.maxMovePct.toFixed(2)}%). Four
+        strategies vote; weights learn from each closed 5m bar in this browser.
       </div>
     </aside>
   )

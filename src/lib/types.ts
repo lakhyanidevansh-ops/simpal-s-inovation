@@ -23,10 +23,20 @@ export type ProjectedBar = {
   high: number
   low: number
   close: number
-  /** Expected move from open as % of price (capped ≤ 1%). */
+  /** Expected move from open as % of price (capped ~0.12%). */
   movePct: number
   /** ± band around expected close as % of price (calibration width). */
   bandPct: number
+}
+
+export type StrategySnapshot = {
+  id: string
+  label: string
+  bias: Bias
+  score: number
+  weight: number
+  reason: string
+  active: boolean
 }
 
 export type NextCandleSuggestion = {
@@ -47,12 +57,14 @@ export type NextCandleSuggestion = {
   analyzedBars: number
   /** ATR(14) of closed 5m bars — sizes the projected candle. */
   atr: number
-  /** Walk-forward direction hit-rate on last N closed bars (0–1). */
+  /** Live-learner / vote hit-rate (0–1). */
   recentHitRate: number
   /** Composite signal score −100…+100 (bearish…bullish). */
   score: number
   /** Chart-ready projected OHLC for this horizon. */
   projected: ProjectedBar
+  strategies: StrategySnapshot[]
+  activeStrategy: string
 }
 
 /** Live call for candle +1 or +2 after the forming bucket. */
@@ -75,6 +87,8 @@ export type DualCandleSuggestions = {
     recentHitRate: number
     sampleSize: number
     maxMovePct: number
+    learningSample: number
+    strategies: StrategySnapshot[]
   }
 }
 
